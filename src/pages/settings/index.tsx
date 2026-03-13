@@ -152,30 +152,48 @@ function InstallPWAPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(
     (window as any).deferredPrompt || null
   );
+  const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
+    // Small delay to allow browser to fire event
+    const timer = setTimeout(() => setIsChecking(false), 2000);
+
     const handler = (e: Event) => {
+      console.log('✅ PWA: beforeinstallprompt event fired');
       e.preventDefault();
       setDeferredPrompt(e);
       (window as any).deferredPrompt = e;
+      setIsChecking(false);
     };
 
-    // Safety check just in case it fired while mounting
     if ((window as any).deferredPrompt) {
       setDeferredPrompt((window as any).deferredPrompt);
+      setIsChecking(false);
     }
 
     window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handler);
+      clearTimeout(timer);
+    };
   }, []);
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-      (window as any).deferredPrompt = null;
+    if (!deferredPrompt) {
+      alert("Installation prompt not available. Please try using Chrome or Edge, or look for the 'Install' icon in your address bar.");
+      return;
+    }
+    
+    try {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`PWA: User choice outcome: ${outcome}`);
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+        (window as any).deferredPrompt = null;
+      }
+    } catch (err) {
+      console.error('PWA: Install error:', err);
     }
   };
 
@@ -183,19 +201,36 @@ function InstallPWAPrompt() {
 
   return (
     <div className="bg-card border border-border rounded-lg p-6 space-y-4">
-      <h2 className="text-sm font-medium text-foreground">Install App</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium text-foreground">Install App</h2>
+        {isChecking && !deferredPrompt && !isStandalone && (
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" title="Checking installation status..." />
+        )}
+      </div>
       <p className="text-sm text-muted-foreground">
         Install ScreenFlow as an application on your device for quick access and offline capabilities.
       </p>
 
       {isStandalone ? (
-        <p className="text-sm text-success font-medium">✨ App is currently installed and running natively!</p>
+        <div className="p-3 bg-primary/10 border border-primary/20 rounded-md">
+          <p className="text-sm text-primary font-medium flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+            App is currently installed and running natively.
+          </p>
+        </div>
       ) : deferredPrompt ? (
-        <Button onClick={handleInstallClick} size="sm" variant="default">Install App</Button>
+        <Button onClick={handleInstallClick} size="sm" className="w-full sm:w-auto shadow-lg shadow-primary/20">
+          Install Native App
+        </Button>
       ) : (
-        <p className="text-sm text-muted-foreground italic">
-          To install, check your browser's address bar for the install icon or the menu for an "Install" or "Add to Home Screen" option.
-        </p>
+        <div className="text-sm text-muted-foreground bg-secondary/50 p-3 rounded-md border border-border/50 italic">
+          <p>Installation prompt not triggered yet.</p>
+          <ul className="list-disc ml-4 mt-2 space-y-1 not-italic">
+            <li>Ensure you are in <b>Chrome</b>, <b>Edge</b>, or <b>Safari</b>.</li>
+            <li>Look for the <b>⊕ Install</b> icon in your URL bar.</li>
+            <li>Or use <b>"Add to Home Screen"</b> in your browser menu.</li>
+          </ul>
+        </div>
       )}
     </div>
   );
