@@ -52,9 +52,13 @@ ALTER TABLE public.schedules DISABLE ROW LEVEL SECURITY;
 
 -- 3. GRANT PERMISSIONS
 GRANT ALL ON TABLE public.screens TO anon;
+GRANT ALL ON TABLE public.screens TO authenticated;
 GRANT ALL ON TABLE public.playlists TO anon;
+GRANT ALL ON TABLE public.playlists TO authenticated;
 GRANT ALL ON TABLE public.media TO anon;
+GRANT ALL ON TABLE public.media TO authenticated;
 GRANT ALL ON TABLE public.schedules TO anon;
+GRANT ALL ON TABLE public.schedules TO authenticated;
 
 -- 4. Enable Realtime triggers
 BEGIN;

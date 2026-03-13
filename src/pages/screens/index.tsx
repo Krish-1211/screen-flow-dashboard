@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Plus, MoreHorizontal, RefreshCw, Monitor } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -51,22 +52,41 @@ export default function ScreensPage() {
       queryClient.invalidateQueries({ queryKey: ['screens'] });
       setNewName("");
       setOpen(false);
+      toast.success("Screen registered successfully");
+    },
+    onError: (error: any) => {
+      console.error("Failed to register screen:", error);
+      toast.error(error.message || "Failed to register screen. Please try again.");
     }
   });
 
   const updateMutation = useMutation({
     mutationFn: (vars: { id: string, payload: any }) => screensApi.update(vars.id, vars.payload),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['screens'] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['screens'] });
+      toast.success("Screen updated");
+    },
+    onError: (error: any) => {
+      console.error("Failed to update screen:", error);
+      toast.error(error.message || "Failed to update screen");
+    }
   });
 
   const deleteMutation = useMutation({
     mutationFn: screensApi.delete,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['screens'] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['screens'] });
+      toast.success("Screen deleted");
+    },
+    onError: (error: any) => {
+      console.error("Failed to delete screen:", error);
+      toast.error(error.message || "Failed to delete screen");
+    }
   });
 
   const addScreen = () => {
-    if (!newName.trim()) return;
-    createMutation.mutate(newName);
+    const nameToRegister = newName.trim() || "New Screen";
+    createMutation.mutate(nameToRegister);
   };
 
   const handlePlaylistChange = (screenId: string, playlistId: string) => {
