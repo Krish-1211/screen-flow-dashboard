@@ -61,18 +61,19 @@ export const mediaApi = {
         return data as Media;
     },
     delete: async (id: string): Promise<void> => {
+        const user = await authApi.me();
         // 1. Get media info to find storage path
         const { data: media, error: fetchError } = await supabase
             .from('media')
-            .select('url, owner')
+            .select('url')
             .eq('id', id)
             .single();
         
         if (fetchError) throw fetchError;
 
-        // 2. Extract path from URL
+        // 2. Extract path from URL (simplified fallback)
         const filename = media.url.split('/').pop();
-        const path = `${media.owner}/${filename}`;
+        const path = `${user.email || 'shared'}/${filename}`;
         
         if (filename) {
             await supabase.storage.from('media').remove([path]);
