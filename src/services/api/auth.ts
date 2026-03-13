@@ -43,7 +43,7 @@ export const authApi = {
         return {
             id: user.id,
             name: user.email?.split('@')[0] || 'User',
-            email: user.email || '',
+            email: user.email || user.id, // Fallback to ID if email is missing
         } as User;
     },
     logout: async () => {

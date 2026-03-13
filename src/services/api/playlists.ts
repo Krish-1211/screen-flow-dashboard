@@ -7,10 +7,13 @@ export const playlistsApi = {
         const user = await authApi.me();
         if (!user) throw new Error("Not authenticated");
 
+        const identifier = user.email || user.id;
+        if (!identifier) return [];
+
         const { data: playlists, error: plError } = await supabase
             .from('playlists')
             .select('*')
-            .eq('owner', user.email)
+            .eq('owner', identifier)
             .order('created_at', { ascending: false });
         
         if (plError) throw plError;
@@ -18,7 +21,7 @@ export const playlistsApi = {
         const { data: media, error: mError } = await supabase
             .from('media')
             .select('*')
-            .eq('owner', user.email);
+            .eq('owner', identifier);
         
         if (mError) throw mError;
 
@@ -57,12 +60,13 @@ export const playlistsApi = {
         const user = await authApi.me();
         if (!user) throw new Error("Not authenticated");
 
+        const identifier = user.email || user.id;
         const { data, error } = await supabase
             .from('playlists')
             .insert([{
                 name: payload.name || 'New Playlist',
                 items: payload.items || [],
-                owner: user.email
+                owner: identifier
             }])
             .select()
             .single();
@@ -78,11 +82,12 @@ export const playlistsApi = {
         if (payload.name !== undefined) updatePayload.name = payload.name;
         if (payload.items !== undefined) updatePayload.items = payload.items;
 
+        const identifier = user.email || user.id;
         const { data, error } = await supabase
             .from('playlists')
             .update(updatePayload)
             .eq('id', id)
-            .eq('owner', user.email)
+            .eq('owner', identifier)
             .select()
             .single();
         
@@ -93,11 +98,12 @@ export const playlistsApi = {
         const user = await authApi.me();
         if (!user) throw new Error("Not authenticated");
 
+        const identifier = user.email || user.id;
         const { error } = await supabase
             .from('playlists')
             .delete()
             .eq('id', id)
-            .eq('owner', user.email);
+            .eq('owner', identifier);
         
         if (error) throw error;
     },

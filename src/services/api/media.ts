@@ -7,10 +7,13 @@ export const mediaApi = {
         const user = await authApi.me();
         if (!user) throw new Error("Not authenticated");
 
+        const identifier = user.email || user.id;
+        if (!identifier) return [];
+
         const { data, error } = await supabase
             .from('media')
             .select('*')
-            .eq('owner', user.email)
+            .eq('owner', identifier)
             .order('created_at', { ascending: false });
         
         if (error) throw error;
@@ -30,10 +33,11 @@ export const mediaApi = {
         const user = await authApi.me();
         if (!user) throw new Error("Not authenticated");
 
+        const identifier = user.email || user.id;
         // 1. Upload file to Storage Bucket
         const fileExt = file.name.split('.').pop();
         const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-        const filePath = `${user.email}/${fileName}`;
+        const filePath = `${identifier}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
             .from('media')
@@ -54,7 +58,7 @@ export const mediaApi = {
                 type: file.type.startsWith('video') ? 'video' : 'image',
                 url: publicUrl,
                 duration: 10,
-                owner: user.email
+                owner: identifier
             }])
             .select()
             .single();

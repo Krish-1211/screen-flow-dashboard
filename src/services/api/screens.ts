@@ -7,10 +7,13 @@ export const screensApi = {
         const user = await authApi.me();
         if (!user) throw new Error("Not authenticated");
 
+        const identifier = user.email || user.id;
+        if (!identifier) return [];
+
         const { data, error } = await supabase
             .from('screens')
             .select('*')
-            .eq('owner', user.email)
+            .eq('owner', identifier)
             .order('created_at', { ascending: false });
         
         if (error) throw error;
@@ -44,12 +47,13 @@ export const screensApi = {
         const user = await authApi.me();
         if (!user) throw new Error("Not authenticated");
 
+        const identifier = user.email || user.id;
         const { data, error } = await supabase
             .from('screens')
             .insert([{
                 name: payload.name || 'New Screen',
                 status: 'offline',
-                owner: user.email
+                owner: identifier
             }])
             .select()
             .single();
@@ -74,11 +78,12 @@ export const screensApi = {
         if (payload.playlistId !== undefined) updatePayload.playlist_id = payload.playlistId;
         if (payload.lastPing !== undefined) updatePayload.last_ping = payload.lastPing;
 
+        const identifier = user.email || user.id;
         const { data, error } = await supabase
             .from('screens')
             .update(updatePayload)
             .eq('id', id)
-            .eq('owner', user.email)
+            .eq('owner', identifier)
             .select()
             .single();
         
@@ -96,11 +101,12 @@ export const screensApi = {
         const user = await authApi.me();
         if (!user) throw new Error("Not authenticated");
 
+        const identifier = user.email || user.id;
         const { error } = await supabase
             .from('screens')
             .delete()
             .eq('id', id)
-            .eq('owner', user.email);
+            .eq('owner', identifier);
         
         if (error) throw error;
     },
