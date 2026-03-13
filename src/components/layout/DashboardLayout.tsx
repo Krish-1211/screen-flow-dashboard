@@ -1,6 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/AppSidebar";
-import { TopNavbar } from "@/components/TopNavbar";
+import { AppSidebar } from "@/components/layout/AppSidebar";
+import { TopNavbar } from "@/components/layout/TopNavbar";
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (

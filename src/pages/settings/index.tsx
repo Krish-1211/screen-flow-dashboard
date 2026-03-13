@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import { useState, useEffect } from "react";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -109,7 +109,7 @@ export default function SettingsPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="appearance" className="mt-6">
+          <TabsContent value="appearance" className="mt-6 space-y-6">
             <div className="bg-card border border-border rounded-lg p-6 space-y-4">
               <h2 className="text-sm font-medium text-foreground">Theme</h2>
               <p className="text-sm text-muted-foreground">Choose your preferred theme</p>
@@ -124,9 +124,64 @@ export default function SettingsPage() {
                 </button>
               </div>
             </div>
+
+            <InstallPWAPrompt />
           </TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>
+  );
+}
+
+function InstallPWAPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(
+    (window as any).deferredPrompt || null
+  );
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      (window as any).deferredPrompt = e;
+    };
+
+    // Safety check just in case it fired while mounting
+    if ((window as any).deferredPrompt) {
+      setDeferredPrompt((window as any).deferredPrompt);
+    }
+
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+      (window as any).deferredPrompt = null;
+    }
+  };
+
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone;
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-6 space-y-4">
+      <h2 className="text-sm font-medium text-foreground">Install App</h2>
+      <p className="text-sm text-muted-foreground">
+        Install ScreenFlow as an application on your device for quick access and offline capabilities.
+      </p>
+
+      {isStandalone ? (
+        <p className="text-sm text-success font-medium">✨ App is currently installed and running natively!</p>
+      ) : deferredPrompt ? (
+        <Button onClick={handleInstallClick} size="sm" variant="default">Install App</Button>
+      ) : (
+        <p className="text-sm text-muted-foreground italic">
+          To install, check your browser's address bar for the install icon or the menu for an "Install" or "Add to Home Screen" option.
+        </p>
+      )}
+    </div>
   );
 }

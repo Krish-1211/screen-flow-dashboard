@@ -1,17 +1,30 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Tv, Eye, EyeOff } from "lucide-react";
+import { Tv, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { authApi } from "@/services/api/auth";
+import { toast } from "sonner";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ email: "", password: "" });
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/");
+    setLoading(true);
+    try {
+      await authApi.login(formData);
+      toast.success("Welcome to ScreenFlow!");
+      navigate("/");
+    } catch (error: any) {
+      toast.error(error.message || "Login failed. Check your credentials.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -22,7 +35,7 @@ export default function LoginPage() {
           <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
             <Tv className="h-5 w-5 text-primary-foreground" />
           </div>
-          <span className="text-xl font-semibold text-foreground">SignageHub</span>
+          <span className="text-xl font-semibold text-foreground">ScreenFlow</span>
         </div>
         <h1 className="text-3xl font-semibold text-foreground mb-4">
           Control your screens from anywhere.
@@ -39,7 +52,7 @@ export default function LoginPage() {
             <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
               <Tv className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-semibold text-foreground">SignageHub</span>
+            <span className="text-xl font-semibold text-foreground">ScreenFlow</span>
           </div>
 
           <h2 className="text-xl font-semibold text-foreground mb-1">Welcome back</h2>
@@ -47,11 +60,14 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email or Username</Label>
               <Input
                 id="email"
-                type="email"
-                placeholder="you@company.com"
+                type="text"
+                required
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="admin"
                 className="bg-secondary border-border"
               />
             </div>
@@ -61,6 +77,9 @@ export default function LoginPage() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
+                  required
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="••••••••"
                   className="bg-secondary border-border pr-10"
                 />
@@ -74,21 +93,16 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="flex justify-end">
-              <button type="button" className="text-xs text-primary hover:underline">
-                Forgot password?
-              </button>
-            </div>
-
-            <Button type="submit" className="w-full">
-              Sign In
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign In"}
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground mt-6">
-            Don't have an account?{" "}
-            <button className="text-primary hover:underline">Create account</button>
-          </p>
+          <div className="mt-8 p-4 bg-secondary/50 rounded-lg border border-border/50">
+            <p className="text-xs text-muted-foreground text-center">
+              Sign up is handled via the admin portal. Contact support if you need an account.
+            </p>
+          </div>
         </div>
       </div>
     </div>

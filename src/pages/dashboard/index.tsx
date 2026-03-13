@@ -1,14 +1,11 @@
 import { Monitor, MonitorPlay, ListMusic, Image, Upload, Wifi, WifiOff, RefreshCw } from "lucide-react";
-import { DashboardLayout } from "@/components/DashboardLayout";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatsCard } from "@/components/StatsCard";
 import { StatusBadge } from "@/components/StatusBadge";
-
-const stats = [
-  { label: "Total Screens", value: 24, icon: Monitor, change: "+2 this week", positive: true },
-  { label: "Active Screens", value: 18, icon: MonitorPlay, change: "75% uptime", positive: true },
-  { label: "Playlists", value: 12, icon: ListMusic, change: "+3 this month", positive: true },
-  { label: "Media Files", value: 156, icon: Image, change: "+15 this week", positive: true },
-];
+import { useQuery } from "@tanstack/react-query";
+import { screensApi } from "@/services/api/screens";
+import { playlistsApi } from "@/services/api/playlists";
+import { mediaApi } from "@/services/api/media";
 
 const recentActivity = [
   { action: "Playlist updated", detail: "Lobby Playlist — 3 items added", time: "2 min ago", icon: RefreshCw },
@@ -17,15 +14,20 @@ const recentActivity = [
   { action: "Screen offline", detail: "Cafeteria-Display-01", time: "3 hours ago", icon: WifiOff },
 ];
 
-const screens = [
-  { name: "Lobby Main", id: "SCR-001", status: "online" as const, playlist: "Welcome Loop" },
-  { name: "Reception TV", id: "SCR-002", status: "online" as const, playlist: "Company Info" },
-  { name: "Cafeteria Display", id: "SCR-003", status: "offline" as const, playlist: "Menu Board" },
-  { name: "Meeting Room A", id: "SCR-004", status: "online" as const, playlist: "Schedule" },
-  { name: "Entrance Panel", id: "SCR-005", status: "online" as const, playlist: "Promotions" },
-];
-
 export default function DashboardPage() {
+  const { data: screens = [] } = useQuery({ queryKey: ['screens'], queryFn: screensApi.getAll });
+  const { data: playlists = [] } = useQuery({ queryKey: ['playlists'], queryFn: playlistsApi.getAll });
+  const { data: media = [] } = useQuery({ queryKey: ['media'], queryFn: mediaApi.getAll });
+
+  const activeScreensCount = screens.filter((s: any) => s.status === 'online').length;
+
+  const stats = [
+    { label: "Total Screens", value: screens.length, icon: Monitor, change: "Live sync", positive: true },
+    { label: "Active Screens", value: activeScreensCount, icon: MonitorPlay, change: `${screens.length > 0 ? Math.round((activeScreensCount / screens.length) * 100) : 0}% online`, positive: activeScreensCount > 0 },
+    { label: "Playlists", value: playlists.length, icon: ListMusic, change: "Tracked", positive: true },
+    { label: "Media Files", value: media.length, icon: Image, change: "Tracked", positive: true },
+  ];
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -41,7 +43,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Activity */}
+          {/* Recent Activity (Still mocked for UI demo purposes) */}
           <div className="bg-card border border-border rounded-lg">
             <div className="p-4 border-b border-border">
               <h2 className="text-sm font-medium text-foreground">Recent Activity</h2>
@@ -62,10 +64,10 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Screens Status */}
+          {/* Live Screens Status */}
           <div className="bg-card border border-border rounded-lg">
             <div className="p-4 border-b border-border">
-              <h2 className="text-sm font-medium text-foreground">Screens Status</h2>
+              <h2 className="text-sm font-medium text-foreground">Live Screens</h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -78,14 +80,19 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {screens.map((s) => (
+                  {screens.slice(0, 5).map((s: any) => (
                     <tr key={s.id}>
                       <td className="p-3 text-foreground">{s.name}</td>
                       <td className="p-3 text-muted-foreground font-mono text-xs">{s.id}</td>
                       <td className="p-3"><StatusBadge status={s.status} /></td>
-                      <td className="p-3 text-muted-foreground">{s.playlist}</td>
+                      <td className="p-3 text-muted-foreground">{s.playlistId ? `ID: #${s.playlistId}` : 'None'}</td>
                     </tr>
                   ))}
+                  {screens.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="p-10 text-center text-muted-foreground">No screens online right now.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
