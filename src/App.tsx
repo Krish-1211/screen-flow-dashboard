@@ -8,6 +8,7 @@ import { ErrorBoundary } from "react-error-boundary";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { ThemeProvider } from "@/components/theme-provider";
+import { wsService } from "@/services/websocket";
 
 const DashboardPage = lazy(() => import("./pages/dashboard"));
 const ScreensPage = lazy(() => import("./pages/screens"));
@@ -20,7 +21,16 @@ const SettingsPage = lazy(() => import("./pages/settings"));
 const LoginPage = lazy(() => import("./pages/login"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60, // 1 minute
+      gcTime: 1000 * 60 * 5, // 5 minutes
+      refetchOnWindowFocus: false,
+      retry: 1,
+    }
+  }
+});
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
@@ -80,8 +90,36 @@ const DefaultFallback = () => (
   </div>
 );
 
+const RealtimeManager = () => {
+  useEffect(() => {
+    wsService.connect();
+    
+    // Global invalidations
+    wsService.on('screen-refresh', () => {
+      console.log('Realtime: Screen update detected');
+      queryClient.invalidateQueries({ queryKey: ['screens'] });
+    });
+    
+    wsService.on('playlist-updated', () => {
+      console.log('Realtime: Playlist update detected');
+      queryClient.invalidateQueries({ queryKey: ['playlists'] });
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+    });
+
+    wsService.on('schedule-updated', () => {
+      console.log('Realtime: Schedule update detected');
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+    });
+
+    return () => wsService.disconnect();
+  }, []);
+
+  return null;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <RealtimeManager />
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme" attribute="class" enableSystem={false}>
       <TooltipProvider>
         <Toaster />

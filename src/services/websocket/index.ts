@@ -19,6 +19,9 @@ class WebSocketService {
             .on('postgres_changes', { event: '*', schema: 'public', table: 'playlists' }, payload => {
                 this.emit('playlist-updated', payload);
             })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'schedules' }, payload => {
+                this.emit('schedule-updated', payload);
+            })
             .on('broadcast', { event: 'refresh-signal' }, payload => {
                 this.emit('screen-refresh', payload);
             })
