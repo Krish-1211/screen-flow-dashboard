@@ -9,7 +9,7 @@ export const screensApi = {
 
         const { data, error } = await supabase
             .from('screens')
-            .select('*')
+            .select('id, name, status, playlist_id, last_ping, created_at')
             .order('created_at', { ascending: false });
         
         if (error) throw error;
@@ -25,7 +25,7 @@ export const screensApi = {
     getById: async (id: string): Promise<Screen> => {
         const { data, error } = await supabase
             .from('screens')
-            .select('*')
+            .select('id, name, status, playlist_id, last_ping, created_at')
             .eq('id', id)
             .single();
         

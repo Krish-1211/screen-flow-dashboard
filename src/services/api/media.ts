@@ -9,7 +9,7 @@ export const mediaApi = {
 
         const { data, error } = await supabase
             .from('media')
-            .select('*')
+            .select('id, name, type, url, duration, created_at')
             .order('created_at', { ascending: false });
         
         if (error) throw error;
@@ -18,7 +18,7 @@ export const mediaApi = {
     getById: async (id: string): Promise<Media> => {
         const { data, error } = await supabase
             .from('media')
-            .select('*')
+            .select('id, name, type, url, duration, created_at')
             .eq('id', id)
             .single();
         
@@ -79,12 +79,21 @@ export const mediaApi = {
             await supabase.storage.from('media').remove([path]);
         }
 
-        // 3. Delete database record
-        const { error: dbError } = await supabase
-            .from('media')
-            .delete()
-            .eq('id', id);
-        
-        if (dbError) throw dbError;
+        console.log("Attempting to delete media ID:", id);
+        try {
+            const { error: dbError } = await supabase
+                .from('media')
+                .delete()
+                .eq('id', id);
+            
+            if (dbError) {
+                console.error("Database deletion error:", dbError);
+                throw dbError;
+            }
+            console.log("Database record deleted successfully");
+        } catch (err) {
+            console.error("Catch-all deletion error:", err);
+            throw err;
+        }
     },
 };

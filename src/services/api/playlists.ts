@@ -9,14 +9,14 @@ export const playlistsApi = {
 
         const { data: playlists, error: plError } = await supabase
             .from('playlists')
-            .select('*')
+            .select('id, name, items, created_at')
             .order('created_at', { ascending: false });
         
         if (plError) throw plError;
 
         const { data: media, error: mError } = await supabase
             .from('media')
-            .select('*');
+            .select('id, name, type, url, duration, created_at');
         
         if (mError) throw mError;
 
@@ -31,7 +31,7 @@ export const playlistsApi = {
     getById: async (id: string): Promise<Playlist> => {
         const { data: pl, error: plError } = await supabase
             .from('playlists')
-            .select('*')
+            .select('id, name, items, created_at')
             .eq('id', id)
             .single();
         
@@ -39,7 +39,7 @@ export const playlistsApi = {
 
         const { data: media, error: mError } = await supabase
             .from('media')
-            .select('*');
+            .select('id, name, type, url, duration, created_at');
         
         if (mError) throw mError;
 
