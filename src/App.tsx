@@ -82,7 +82,7 @@ const DefaultFallback = () => (
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme" attribute="class">
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme" attribute="class" enableSystem={false}>
       <TooltipProvider>
         <Toaster />
         <Sonner />

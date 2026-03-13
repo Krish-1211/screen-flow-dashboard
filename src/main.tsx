@@ -11,7 +11,5 @@ window.addEventListener('beforeinstallprompt', (e) => {
     (window as any).deferredPrompt = e;
 });
 
-// Apply dark mode by default
-document.documentElement.classList.add("dark");
-
+// next-themes will handle theme via ThemeProvider in App.tsx
 createRoot(document.getElementById("root")!).render(<App />);
