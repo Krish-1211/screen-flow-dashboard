@@ -13,16 +13,9 @@ export interface Schedule {
 
 export const schedulesApi = {
     getAll: async (): Promise<Schedule[]> => {
-        const user = await authApi.me();
-        if (!user) throw new Error("Not authenticated");
-
-        const identifier = user.email || user.id;
-        if (!identifier) return [];
-
         const { data, error } = await supabase
             .from('schedules')
             .select('*')
-            .eq('owner', identifier)
             .order('created_at', { ascending: false });
         if (error) throw error;
         return (data || []).map(s => ({
@@ -34,17 +27,12 @@ export const schedulesApi = {
         })) as Schedule[];
     },
     create: async (payload: Partial<Schedule>): Promise<Schedule> => {
-        const user = await authApi.me();
-        if (!user) throw new Error("Not authenticated");
-
-        const identifier = user.email || user.id;
         const dbPayload = {
             screen_id: payload.screenId,
             playlist_id: payload.playlistId,
             day: payload.day,
             start_hour: payload.startHour,
-            end_hour: payload.endHour,
-            owner: identifier
+            end_hour: payload.endHour
         };
         const { data, error } = await supabase
             .from('schedules')
@@ -55,15 +43,10 @@ export const schedulesApi = {
         return data as Schedule;
     },
     delete: async (id: string): Promise<void> => {
-        const user = await authApi.me();
-        if (!user) throw new Error("Not authenticated");
-
-        const identifier = user.email || user.id;
         const { error } = await supabase
             .from('schedules')
             .delete()
-            .eq('id', id)
-            .eq('owner', identifier);
+            .eq('id', id);
         if (error) throw error;
     }
 };
