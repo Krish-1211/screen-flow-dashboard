@@ -29,7 +29,7 @@ export const authApi = {
         return {
             id: data.user.id,
             name: data.user.email?.split('@')[0] || 'User',
-            email: data.user.email || '',
+            email: data.user.email || data.user.id, // Absolute fallback
         } as User;
     },
     me: async (): Promise<User | null> => {
@@ -40,10 +40,12 @@ export const authApi = {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return null;
         
+        console.log("Auth Check - User ID:", user.id, "Email:", user.email);
+        
         return {
             id: user.id,
             name: user.email?.split('@')[0] || 'User',
-            email: user.email || user.id, // Fallback to ID if email is missing
+            email: user.email || user.id, // Absolute fallback
         } as User;
     },
     logout: async () => {
