@@ -7,6 +7,7 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
+import { ThemeProvider } from "@/components/theme-provider";
 
 const DashboardPage = lazy(() => import("./pages/dashboard"));
 const ScreensPage = lazy(() => import("./pages/screens"));
@@ -81,33 +82,35 @@ const DefaultFallback = () => (
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <ErrorBoundary FallbackComponent={ErrorFallback} onReset={() => window.location.reload()}>
-          <Suspense fallback={<DefaultFallback />}>
-            <Routes>
-              {/* Public Routes */}
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/display/:screenId" element={<DisplayPlayerPage />} />
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme" attribute="class">
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <ErrorBoundary FallbackComponent={ErrorFallback} onReset={() => window.location.reload()}>
+            <Suspense fallback={<DefaultFallback />}>
+              <Routes>
+                {/* Public Routes */}
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/display/:screenId" element={<DisplayPlayerPage />} />
 
-              {/* Protected Protected Routes */}
-              <Route path="/" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />
-              <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-              <Route path="/screens" element={<ProtectedRoute><ScreensPage /></ProtectedRoute>} />
-              <Route path="/media" element={<ProtectedRoute><MediaLibraryPage /></ProtectedRoute>} />
-              <Route path="/playlists" element={<ProtectedRoute><PlaylistsPage /></ProtectedRoute>} />
-              <Route path="/schedules" element={<ProtectedRoute><SchedulesPage /></ProtectedRoute>} />
-              <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
-              <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-              
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </ErrorBoundary>
-      </BrowserRouter>
-    </TooltipProvider>
+                {/* Protected Protected Routes */}
+                <Route path="/" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />
+                <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+                <Route path="/screens" element={<ProtectedRoute><ScreensPage /></ProtectedRoute>} />
+                <Route path="/media" element={<ProtectedRoute><MediaLibraryPage /></ProtectedRoute>} />
+                <Route path="/playlists" element={<ProtectedRoute><PlaylistsPage /></ProtectedRoute>} />
+                <Route path="/schedules" element={<ProtectedRoute><SchedulesPage /></ProtectedRoute>} />
+                <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+                
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

@@ -5,8 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
+import { useTheme } from "next-themes";
+import { cn } from "@/lib/utils";
 
 export default function SettingsPage() {
+  const { theme, setTheme } = useTheme();
   const [companyName, setCompanyName] = useState("Acme Corp");
   const [defaultDuration, setDefaultDuration] = useState("10");
 
@@ -114,13 +117,25 @@ export default function SettingsPage() {
               <h2 className="text-sm font-medium text-foreground">Theme</h2>
               <p className="text-sm text-muted-foreground">Choose your preferred theme</p>
               <div className="flex gap-3">
-                <button className="border-2 border-primary rounded-lg p-4 flex flex-col items-center gap-2 bg-secondary">
+                <button 
+                  onClick={() => setTheme("dark")}
+                  className={cn(
+                    "border-2 rounded-lg p-4 flex flex-col items-center gap-2 bg-secondary transition-all",
+                    theme === "dark" ? "border-primary shadow-lg shadow-primary/10" : "border-border hover:border-muted-foreground/50"
+                  )}
+                >
                   <div className="h-8 w-12 rounded bg-[hsl(240,10%,6%)] border border-border" />
-                  <span className="text-xs text-foreground">Dark</span>
+                  <span className="text-xs text-foreground font-medium">Dark</span>
                 </button>
-                <button className="border-2 border-border rounded-lg p-4 flex flex-col items-center gap-2">
+                <button 
+                  onClick={() => setTheme("light")}
+                  className={cn(
+                    "border-2 rounded-lg p-4 flex flex-col items-center gap-2 bg-background transition-all",
+                    theme === "light" ? "border-primary shadow-lg shadow-primary/10" : "border-border hover:border-muted-foreground/50"
+                  )}
+                >
                   <div className="h-8 w-12 rounded bg-[hsl(0,0%,100%)] border border-border" />
-                  <span className="text-xs text-foreground">Light</span>
+                  <span className="text-xs text-foreground font-medium">Light</span>
                 </button>
               </div>
             </div>
