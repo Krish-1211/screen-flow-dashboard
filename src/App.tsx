@@ -18,6 +18,7 @@ const SchedulesPage = lazy(() => import("./pages/schedules"));
 const DisplayPlayerPage = lazy(() => import("./pages/display"));
 const BillingPage = lazy(() => import("./pages/billing"));
 const SettingsPage = lazy(() => import("./pages/settings"));
+const AuditLogPage = lazy(() => import("./pages/audit"));
 const LoginPage = lazy(() => import("./pages/login"));
 const NotFound = lazy(() => import("./pages/not-found"));
 
@@ -37,29 +38,19 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   useEffect(() => {
-    async function checkAuth() {
-      // 1. Check for manual dummy auth
-      if (localStorage.getItem('sb-dummy-auth') === 'true') {
-        setIsAuthenticated(true);
-        return;
-      }
-
-      // 2. Check for Supabase session
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsAuthenticated(!!session);
+    function checkAuth() {
+      // Check for our new JWT token
+      const token = localStorage.getItem('sf_token');
+      setIsAuthenticated(!!token);
     }
 
     checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (localStorage.getItem('sb-dummy-auth') === 'true') {
-        setIsAuthenticated(true);
-      } else {
-        setIsAuthenticated(!!session);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    // Listen for storage changes (e.g. login/logout)
+    const handleStorageChange = () => checkAuth();
+    window.addEventListener('storage', handleStorageChange);
+    
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   if (isAuthenticated === null) return <DefaultFallback />;
@@ -124,7 +115,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <ErrorBoundary FallbackComponent={ErrorFallback} onReset={() => window.location.reload()}>
             <Suspense fallback={<DefaultFallback />}>
               <Routes>
@@ -140,6 +131,7 @@ const App = () => (
                 <Route path="/playlists" element={<ProtectedRoute><PlaylistsPage /></ProtectedRoute>} />
                 <Route path="/schedules" element={<ProtectedRoute><SchedulesPage /></ProtectedRoute>} />
                 <Route path="/billing" element={<ProtectedRoute><BillingPage /></ProtectedRoute>} />
+                <Route path="/audit" element={<ProtectedRoute><AuditLogPage /></ProtectedRoute>} />
                 <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
                 
                 <Route path="*" element={<NotFound />} />

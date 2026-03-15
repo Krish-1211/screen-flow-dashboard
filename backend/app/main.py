@@ -1,17 +1,47 @@
-from fastapi import FastAPI
+import os
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, engine
-from .routes import media, playlists, screens, licenses
+from .routes import media, playlists, screens, licenses, auth, webhooks, schedules, audit
+from .auth import get_current_user
 
 
+REQUIRED_ENV_VARS = [
+    "DATABASE_URL",
+    "JWT_SECRET_KEY",
+    "ADMIN_USERNAME",
+    "ADMIN_PASSWORD",
+    "CORS_ALLOWED_ORIGINS",
+    "B2_ENDPOINT",
+    "B2_KEY_ID",
+    "B2_APPLICATION_KEY",
+    "B2_BUCKET_NAME",
+]
 def create_app() -> FastAPI:
-    app = FastAPI(title="Screen Flow Dashboard API")
+    # Startup validation
+    if os.getenv("RENDER"): # Only enforce on Render
+        missing = [v for v in REQUIRED_ENV_VARS if not os.environ.get(v)]
+        
+        if missing:
+            raise RuntimeError(
+                f"ScreenFlow cannot start. Missing required environment variables: "
+                f"{', '.join(missing)}"
+            )
 
-    # CORS for local network usage
+    app = FastAPI(title="ScreenFlow Dashboard API")
+
+    # CORS configuration
+    cors_allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    if not cors_allowed_origins:
+        raise ValueError("CORS_ALLOWED_ORIGINS must be set. Example: http://10.0.0.50:3000")
+    
+    origins = [origin.strip() for origin in cors_allowed_origins.split(",") if origin.strip()]
+
+    # CORS middleware
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -21,13 +51,22 @@ def create_app() -> FastAPI:
     Base.metadata.create_all(bind=engine)
 
     # Routers
-    app.include_router(media.router, prefix="/media", tags=["media"])
-    app.include_router(playlists.router, prefix="/playlists", tags=["playlists"])
-    app.include_router(screens.router, prefix="/screens", tags=["screens"])
-    app.include_router(licenses.router, prefix="/licenses", tags=["licenses"])
+    app.include_router(auth.router, prefix="/auth", tags=["auth"])
+    
+    # Protected management routers
+    app.include_router(media.router, prefix="/media", tags=["media"], dependencies=[Depends(get_current_user)])
+    app.include_router(playlists.router, prefix="/playlists", tags=["playlists"], dependencies=[Depends(get_current_user)])
+    app.include_router(screens.router, prefix="/screens", tags=["screens"], dependencies=[Depends(get_current_user)])
+    app.include_router(licenses.router, prefix="/licenses", tags=["licenses"], dependencies=[Depends(get_current_user)])
+    app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"], dependencies=[Depends(get_current_user)])
+    app.include_router(schedules.router, prefix="/schedules", tags=["schedules"], dependencies=[Depends(get_current_user)])
+    app.include_router(audit.router, prefix="/audit", tags=["audit"], dependencies=[Depends(get_current_user)])
+    
+    # Public signage routers
+    app.include_router(screens.public_router, prefix="/screens", tags=["screens-public"])
 
     @app.get("/health")
-    def health():
+    def health_check():
         return {"status": "ok"}
 
     return app

@@ -41,11 +41,52 @@ export default function DisplayPlayerPage() {
     console.log("Preload complete.");
   }, []);
 
+  useEffect(() => {
+    if (!screenId) return;
+    let interval: any;
+
+    const startHeartbeat = async () => {
+      try {
+        // Ensure we are registered (gets the cookie if it's missing)
+        await screensApi.register();
+        
+        // Start periodic heartbeats (no device_id needed in body anymore)
+        screensApi.heartbeat().catch(console.error);
+        interval = setInterval(() => {
+          screensApi.heartbeat().catch(console.error);
+        }, 30000);
+
+        // Signal offline on tab close
+        const handleUnload = () => {
+          const data = JSON.stringify({ status: 'offline' });
+          // Note: sendBeacon doesn't easily support cookies cross-origin in some browsers, 
+          // but since we are locking down identity to cookies, we'll rely on heartbeat timeout 
+          // if beacon fails to include the cookie session.
+          const url = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/screens/${screenId}`;
+          navigator.sendBeacon(url, data);
+        };
+        window.addEventListener('beforeunload', handleUnload);
+        return () => {
+          clearInterval(interval);
+          window.removeEventListener('beforeunload', handleUnload);
+        };
+      } catch (err) {
+        console.error("Heartbeat initialization failed", err);
+      }
+    };
+
+    startHeartbeat();
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [screenId]);
+
   const loadPlaylist = useCallback(async () => {
     if (!screenId) return;
     try {
       setLoading(true);
       const screen = await screensApi.getById(screenId);
+      
       if (screen.playlistId) {
         const pl = await playlistsApi.getById(screen.playlistId);
         setPlaylist(pl);

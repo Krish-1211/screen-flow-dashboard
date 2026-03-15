@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: screenflow-api
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: screenflow-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        sync: false
+      - key: ADMIN_USERNAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: HEARTBEAT_TIMEOUT_SECONDS
+        value: "90"
+      - key: B2_ENDPOINT
+        value: "https://s3.us-east-005.backblazeb2.com"
+      - key: B2_KEY_ID
+        sync: false
+      - key: B2_APPLICATION_KEY
+        sync: false
+      - key: B2_BUCKET_NAME
+        value: "screenflow-media"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: RENDER
+        value: "true"
+
+  - type: web
+    name: screenflow-dashboard
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+databases:
+  - name: screenflow-db
+    plan: free
+    databaseName: screenflow
+    user: screenflow_user

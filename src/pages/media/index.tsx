@@ -7,6 +7,7 @@ import { mediaApi } from "@/services/api/media";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -16,6 +17,7 @@ export default function MediaLibraryPage() {
   const queryClient = useQueryClient();
   const [uploadOpen, setUploadOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState("");
 
   const { data: media = [], isLoading } = useQuery({
     queryKey: ['media'],
@@ -34,6 +36,22 @@ export default function MediaLibraryPage() {
       setUploadOpen(false);
     }
   });
+
+  const youtubeMutation = useMutation({
+    mutationFn: (url: string) => mediaApi.addYoutube(url),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+      setYoutubeUrl("");
+      setUploadOpen(false);
+    }
+  });
+
+  const handleYoutubeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (youtubeUrl.trim()) {
+      youtubeMutation.mutate(youtubeUrl.trim());
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -61,6 +79,9 @@ export default function MediaLibraryPage() {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Upload Media</DialogTitle>
+                  <DialogDescription>
+                    Choose a file from your computer or provide a YouTube URL.
+                  </DialogDescription>
                 </DialogHeader>
                 <div
                   className={`border-2 border-dashed rounded-lg p-10 text-center transition-colors relative ${dragActive ? "border-primary bg-primary/5" : "border-border"
@@ -96,6 +117,33 @@ export default function MediaLibraryPage() {
                     </>
                   )}
                 </div>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-background px-2 text-muted-foreground">OR</span>
+                  </div>
+                </div>
+
+                <form onSubmit={handleYoutubeSubmit} className="space-y-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Add via YouTube URL</p>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={youtubeUrl}
+                        onChange={(e) => setYoutubeUrl(e.target.value)}
+                        placeholder="https://www.youtube.com/watch?v=..."
+                        className="flex-1 bg-secondary rounded-md px-3 py-2 text-sm border-none focus:ring-1 focus:ring-primary outline-none"
+                      />
+                      <Button type="submit" disabled={youtubeMutation.isPending || !youtubeUrl.trim()}>
+                        {youtubeMutation.isPending ? "Downloading..." : "Add Video"}
+                      </Button>
+                    </div>
+                  </div>
+                </form>
               </DialogContent>
             </Dialog>
           </div>

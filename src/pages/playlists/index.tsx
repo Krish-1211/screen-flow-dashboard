@@ -12,7 +12,7 @@ import type { Media } from "@/types";
 
 export default function PlaylistsPage() {
   const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | number | null>(null);
 
   const { data: playlists = [], isLoading } = useQuery({
     queryKey: ['playlists'],
@@ -20,7 +20,7 @@ export default function PlaylistsPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (vars: { id: string, name?: string, items?: any[] }) =>
+    mutationFn: (vars: { id: string | number, name?: string, items?: any[] }) =>
       playlistsApi.update(vars.id, vars),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['playlists'] })
   });
@@ -64,16 +64,16 @@ export default function PlaylistsPage() {
     updateMutation.mutate({ id: selected.id, items: updatedItems });
   };
 
-  const removeItem = (itemId: string) => {
+  const removeItem = (itemId: string | number) => {
     if (!selected) return;
-    const updatedItems = selected.items.filter((i: any) => i.id !== itemId);
+    const updatedItems = selected.items.filter((i: any) => String(i.id) !== String(itemId));
     updateMutation.mutate({ id: selected.id, items: updatedItems });
   };
 
-  const updateItemDuration = (itemId: string, duration: number) => {
+  const updateItemDuration = (itemId: string | number, duration: number) => {
     if (!selected) return;
     const updatedItems = selected.items.map((i: any) =>
-      i.id === itemId ? { ...i, duration } : i
+      String(i.id) === String(itemId) ? { ...i, duration } : i
     );
     updateMutation.mutate({ id: selected.id, items: updatedItems });
   };
@@ -119,7 +119,7 @@ export default function PlaylistsPage() {
                       onClick={() => setSelectedId(p.id)}
                       className={cn(
                         "w-full text-left p-4 flex flex-row items-center justify-between hover:bg-accent/30 transition-colors cursor-pointer",
-                        selectedId === p.id && "bg-accent/50"
+                        String(selectedId) === String(p.id) && "bg-accent/50"
                       )}
                     >
                       <div className="flex-1">

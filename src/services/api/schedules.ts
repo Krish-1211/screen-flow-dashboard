@@ -1,52 +1,32 @@
-import { supabase } from '@/lib/supabase';
-import { authApi } from './auth';
+import api from '@/lib/axios';
 
 export interface Schedule {
-    id: string;
-    screenId: string;
-    playlistId: string;
-    day: string;
-    startHour: number;
-    endHour: number;
-    created_at?: string;
+    id: number;
+    screen_id: number;
+    playlist_id: number;
+    name?: string;
+    start_time: string;
+    end_time: string;
+    days_of_week: number[];
+    active: boolean;
+    created_at: string;
 }
 
 export const schedulesApi = {
-    getAll: async (): Promise<Schedule[]> => {
-        const { data, error } = await supabase
-            .from('schedules')
-            .select('*')
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-        return (data || []).map(s => ({
-            ...s,
-            screenId: s.screen_id,
-            playlistId: s.playlist_id,
-            startHour: s.start_hour,
-            endHour: s.end_hour
-        })) as Schedule[];
+    getAll: async (screenId?: number): Promise<Schedule[]> => {
+        const url = screenId ? `/schedules/?screen_id=${screenId}` : '/schedules/';
+        const response = await api.get(url);
+        return response.data;
     },
     create: async (payload: Partial<Schedule>): Promise<Schedule> => {
-        const dbPayload = {
-            screen_id: payload.screenId,
-            playlist_id: payload.playlistId,
-            day: payload.day,
-            start_hour: payload.startHour,
-            end_hour: payload.endHour
-        };
-        const { data, error } = await supabase
-            .from('schedules')
-            .insert([dbPayload])
-            .select()
-            .single();
-        if (error) throw error;
-        return data as Schedule;
+        const response = await api.post('/schedules/', payload);
+        return response.data;
     },
-    delete: async (id: string): Promise<void> => {
-        const { error } = await supabase
-            .from('schedules')
-            .delete()
-            .eq('id', id);
-        if (error) throw error;
+    update: async (id: number, payload: Partial<Schedule>): Promise<Schedule> => {
+        const response = await api.put(`/schedules/${id}`, payload);
+        return response.data;
+    },
+    delete: async (id: number): Promise<void> => {
+        await api.delete(`/schedules/${id}`);
     }
 };

@@ -1,103 +1,74 @@
 import type { Screen } from '@/types';
-import { supabase } from '@/lib/supabase';
-import { authApi } from './auth';
+import api from '@/lib/axios';
 
 export const screensApi = {
     getAll: async (): Promise<Screen[]> => {
-        const user = await authApi.me();
-        if (!user) throw new Error("Not authenticated");
-
-        const { data, error } = await supabase
-            .from('screens')
-            .select('id, name, status, playlist_id, last_ping, created_at')
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        
-        return (data || []).map(s => ({
+        const response = await api.get('/screens/');
+        return response.data.map((s: any) => ({
             id: s.id,
             name: s.name,
             status: s.status,
-            playlistId: s.playlist_id,
-            lastPing: s.last_ping
+            playlistId: s.playlistId,
+            lastPing: s.last_seen,
+            device_id: s.device_id
         })) as Screen[];
     },
-    getById: async (id: string): Promise<Screen> => {
-        const { data, error } = await supabase
-            .from('screens')
-            .select('id, name, status, playlist_id, last_ping, created_at')
-            .eq('id', id)
-            .single();
-        
-        if (error) throw error;
-        
+    getById: async (id: string | number): Promise<Screen> => {
+        const response = await api.get(`/screens/${id}`);
+        const s = response.data;
         return {
-            id: data.id,
-            name: data.name,
-            status: data.status,
-            playlistId: data.playlist_id,
-            lastPing: data.last_ping
+            id: s.id,
+            name: s.name,
+            status: s.status,
+            playlistId: s.playlistId,
+            lastPing: s.last_seen,
+            device_id: s.device_id
         } as Screen;
     },
     create: async (payload: Partial<Screen>): Promise<Screen> => {
-        const user = await authApi.me();
-        if (!user) throw new Error("Not authenticated");
-
-        const { data, error } = await supabase
-            .from('screens')
-            .insert([{
-                name: payload.name || 'New Screen',
-                status: 'offline'
-            }])
-            .select()
-            .single();
-        
-        if (error) throw error;
-        
+        // Backend register now reads from cookie or generates UUID
+        const response = await api.post('/screens/register', {
+            name: payload.name
+        }, { withCredentials: true });
+        const s = response.data;
         return {
-            id: data.id,
-            name: data.name,
-            status: data.status,
-            playlistId: data.playlist_id,
-            lastPing: data.last_ping
+            id: s.screen_id,
+            name: payload.name || 'New Screen',
+            status: 'online',
+            playlistId: s.playlist,
+            lastPing: new Date().toISOString(),
+            device_id: '' // Will be handled by cookie locally
         } as Screen;
     },
-    update: async (id: string, payload: Partial<Screen>): Promise<Screen> => {
-        const user = await authApi.me();
-        if (!user) throw new Error("Not authenticated");
-
+    update: async (id: string | number, payload: Partial<Screen>): Promise<Screen> => {
         const updatePayload: any = {};
         if (payload.name !== undefined) updatePayload.name = payload.name;
-        if (payload.status !== undefined) updatePayload.status = payload.status;
-        if (payload.playlistId !== undefined) updatePayload.playlist_id = payload.playlistId;
-        if (payload.lastPing !== undefined) updatePayload.last_ping = payload.lastPing;
+        if (payload.playlistId !== undefined) updatePayload.current_playlist_id = payload.playlistId;
 
-        const { data, error } = await supabase
-            .from('screens')
-            .update(updatePayload)
-            .eq('id', id)
-            .select()
-            .single();
-        
-        if (error) throw error;
-        
+        const response = await api.put(`/screens/${id}`, updatePayload);
+        const s = response.data;
         return {
-            id: data.id,
-            name: data.name,
-            status: data.status,
-            playlistId: data.playlist_id,
-            lastPing: data.last_ping
+            id: s.id,
+            name: s.name,
+            status: s.status,
+            playlistId: s.playlistId,
+            lastPing: s.last_seen,
+            device_id: s.device_id
         } as Screen;
     },
-    delete: async (id: string): Promise<void> => {
-        const user = await authApi.me();
-        if (!user) throw new Error("Not authenticated");
-
-        const { error } = await supabase
-            .from('screens')
-            .delete()
-            .eq('id', id);
-        
-        if (error) throw error;
+    delete: async (id: string | number): Promise<void> => {
+        await api.delete(`/screens/${id}`);
     },
+    heartbeat: async (): Promise<void> => {
+        // device_id is now read from cookie on backend
+        await api.post('/screens/heartbeat', {}, { withCredentials: true });
+    },
+    register: async (name?: string): Promise<{ screen_id: number, playlist: number }> => {
+        const response = await api.post('/screens/register', { name }, { withCredentials: true });
+        return response.data;
+    },
+    bulkUpdate: async (screen_ids: number[], playlist_id: number): Promise<{ updated: number, playlist_id: number }> => {
+        const response = await api.put('/screens/bulk', { screen_ids, playlist_id });
+        return response.data;
+    }
 };

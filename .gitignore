@@ -38,3 +38,17 @@ tunnel.js
 pinggy*
 lh*
 server.js
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# App Specific
+media/
+backend/app/media/
+backend/app/__pycache__/
+backend/app/models/__pycache__/
+backend/app/routes/__pycache__/
+backend/app/services/__pycache__/

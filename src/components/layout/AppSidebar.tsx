@@ -8,6 +8,7 @@ import {
   Settings,
   Tv,
   LogOut,
+  Shield,
 } from "lucide-react";
 import { NavLink } from "@/components/layout/NavLink";
 import { useLocation } from "react-router-dom";
@@ -33,6 +34,7 @@ const navItems = [
   { title: "Playlists", url: "/playlists", icon: ListMusic },
   { title: "Schedules", url: "/schedules", icon: Calendar },
   { title: "Billing", url: "/billing", icon: CreditCard },
+  { title: "Audit Log", url: "/audit", icon: Shield },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 

@@ -83,3 +83,31 @@ CREATE POLICY "Public Access All" ON storage.objects FOR ALL USING ( bucket_id =
 
 DROP POLICY IF EXISTS "Public Upload" ON storage.objects;
 CREATE POLICY "Public Upload" ON storage.objects FOR INSERT WITH CHECK ( bucket_id = 'media' );
+
+-- 6. NEW TABLES: Webhooks and Audit Log
+CREATE TABLE IF NOT EXISTS public.webhooks (
+  id uuid default gen_random_uuid() primary key,
+  url text not null,
+  secret text,
+  events jsonb default '["screen.offline"]'::jsonb,
+  enabled boolean default true,
+  created_at timestamp with time zone default now()
+);
+
+CREATE TABLE IF NOT EXISTS public.audit_log (
+  id serial primary key,
+  user_id integer,
+  action text not null,
+  resource_type text not null,
+  resource_id text,
+  meta jsonb,
+  created_at timestamp without time zone default now()
+);
+
+ALTER TABLE public.webhooks DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_log DISABLE ROW LEVEL SECURITY;
+
+GRANT ALL ON TABLE public.webhooks TO anon;
+GRANT ALL ON TABLE public.webhooks TO authenticated;
+GRANT ALL ON TABLE public.audit_log TO anon;
+GRANT ALL ON TABLE public.audit_log TO authenticated;

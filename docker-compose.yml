@@ -22,12 +22,15 @@ services:
       POSTGRES_DB: screenflow
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+    env_file: .env
     depends_on:
       - db
     volumes:
       - ./media:/app/media
-      - ./license.json:/app/license.json:ro
-      - ./license_public.pem:/app/license_public.pem:ro
+      - ./backend/app:/app/app
+      - ./license.json:/app/license.json
+      - ./license_public.pem:/app/license_public.pem
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
       - "8000:8000"
 

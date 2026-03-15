@@ -5,15 +5,16 @@ export interface User {
 }
 
 export interface Screen {
-    id: string;
+    id: number | string;
     name: string;
     status: 'online' | 'offline';
-    playlistId?: string;
+    playlistId?: number;
     lastPing?: string;
+    device_id?: string;
 }
 
 export interface Media {
-    id: string;
+    id: number | string;
     name: string;
     type: 'image' | 'video';
     url: string;
@@ -22,15 +23,15 @@ export interface Media {
 }
 
 export interface PlaylistItem {
-    id: string;
-    mediaId: string;
+    id: number | string;
+    mediaId: number | string;
     media?: Media;
     duration: number; // in seconds
     order: number;
 }
 
 export interface Playlist {
-    id: string;
+    id: number | string;
     name: string;
     items: PlaylistItem[];
 }

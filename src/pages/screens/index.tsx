@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, MoreHorizontal, RefreshCw, Monitor } from "lucide-react";
+import { Plus, MoreHorizontal, RefreshCw, Monitor, CheckCircle2, X, Calendar } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { playlistsApi } from "@/services/api/playlists";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -29,16 +30,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { ScreenDetailModal } from "@/components/screens/ScreenDetailModal";
 
 export default function ScreensPage() {
   const queryClient = useQueryClient();
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkPlaylistId, setBulkPlaylistId] = useState<string>("");
   const [newName, setNewName] = useState("");
   const [open, setOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [selectedScreen, setSelectedScreen] = useState<any>(null);
 
   const { data: screens = [], isLoading: loadingScreens } = useQuery({
     queryKey: ['screens'],
-    queryFn: screensApi.getAll
+    queryFn: screensApi.getAll,
+    refetchInterval: 5000
   });
 
   const { data: playlists = [] } = useQuery({
@@ -84,6 +92,20 @@ export default function ScreensPage() {
     }
   });
 
+  const bulkMutation = useMutation({
+    mutationFn: (vars: { ids: number[], playlistId: number }) => 
+      screensApi.bulkUpdate(vars.ids, vars.playlistId),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['screens'] });
+      toast.success(`Playlist assigned to ${data.updated} screens.`);
+      setSelectedIds(new Set());
+      setBulkPlaylistId("");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Bulk update failed");
+    }
+  });
+
   const addScreen = () => {
     const nameToRegister = newName.trim() || "New Screen";
     createMutation.mutate(nameToRegister);
@@ -93,6 +115,29 @@ export default function ScreensPage() {
     updateMutation.mutate({
       id: screenId,
       payload: { playlistId: playlistId === "none" ? null : playlistId }
+    });
+  };
+
+  const toggleSelect = (id: number) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === screens.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(screens.map((s: any) => s.id)));
+    }
+  };
+
+  const handleBulkAssign = () => {
+    if (!bulkPlaylistId || bulkPlaylistId === "none") return;
+    bulkMutation.mutate({
+      ids: Array.from(selectedIds),
+      playlistId: parseInt(bulkPlaylistId)
     });
   };
 
@@ -115,6 +160,9 @@ export default function ScreensPage() {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Register New Screen</DialogTitle>
+                  <DialogDescription>
+                    Add a name for your screen to easily identify it in the dashboard.
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 pt-2">
                   <div className="space-y-2">
@@ -133,7 +181,7 @@ export default function ScreensPage() {
                     </code>
                   </div>
                   <Button onClick={addScreen} disabled={createMutation.isPending} className="w-full">
-                    {createMutation.isPending ? "Registering..." : "Register Screen"}
+                    {createMutation.isPending ? "Generating..." : "Generate New Device ID"}
                   </Button>
                 </div>
               </DialogContent>
@@ -158,6 +206,12 @@ export default function ScreensPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground uppercase text-[10px] tracking-wider">
+                      <th className="p-4 w-10">
+                        <Checkbox 
+                          checked={screens.length > 0 && selectedIds.size === screens.length}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </th>
                       <th className="text-left p-4 font-semibold">Screen Name</th>
                       <th className="text-left p-4 font-semibold">Status</th>
                       <th className="text-left p-4 font-semibold">Active Playlist</th>
@@ -167,10 +221,29 @@ export default function ScreensPage() {
                   </thead>
                   <tbody className="divide-y divide-border">
                     {screens.map((s: any) => (
-                      <tr key={s.id} className="hover:bg-accent/10 transition-colors">
+                      <tr key={s.id} className={cn("hover:bg-accent/10 transition-colors group", selectedIds.has(s.id) && "bg-accent/20")}>
                         <td className="p-4">
-                          <div className="flex flex-col">
-                            <span className="text-foreground font-medium">{s.name}</span>
+                          <Checkbox 
+                            checked={selectedIds.has(s.id)}
+                            onCheckedChange={() => toggleSelect(s.id)}
+                            className={cn(
+                              "transition-opacity",
+                              selectedIds.size === 0 && "opacity-0 group-hover:opacity-100",
+                              selectedIds.has(s.id) && "opacity-100"
+                            )}
+                          />
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-col group/name cursor-pointer" onClick={() => { setSelectedScreen(s); setDetailOpen(true); }}>
+                            <div className="flex items-center gap-2">
+                              <span className="text-foreground font-medium group-hover/name:text-primary transition-colors">{s.name}</span>
+                              {s.schedule_count > 0 && (
+                                <div className="flex items-center gap-1 bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 rounded-full border border-primary/20">
+                                  <Calendar className="h-2.5 w-2.5" />
+                                  <span>{s.schedule_count}</span>
+                                </div>
+                              )}
+                            </div>
                             <span className="text-[10px] text-muted-foreground font-mono mt-0.5">{s.id}</span>
                           </div>
                         </td>
@@ -192,7 +265,7 @@ export default function ScreensPage() {
                           </Select>
                         </td>
                         <td className="p-4 text-muted-foreground text-xs font-mono">
-                          {s.lastPing ? new Date(s.lastPing).toLocaleTimeString() : 'Never'}
+                          {s.lastPing ? new Date(s.lastPing).toLocaleString() : 'Never'}
                         </td>
                         <td className="p-4 text-right">
                           <DropdownMenu>
@@ -218,8 +291,16 @@ export default function ScreensPage() {
                 {screens.map((s: any) => (
                   <div key={s.id} className="p-4 space-y-4">
                     <div className="flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-foreground">{s.name}</span>
+                      <div className="flex flex-col cursor-pointer" onClick={() => { setSelectedScreen(s); setDetailOpen(true); }}>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-foreground">{s.name}</span>
+                          {s.schedule_count > 0 && (
+                            <div className="flex items-center gap-1 bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 rounded-full border border-primary/20">
+                              <Calendar className="h-2.5 w-2.5" />
+                              <span>{s.schedule_count}</span>
+                            </div>
+                          )}
+                        </div>
                         <span className="text-[10px] font-mono text-muted-foreground">{s.id}</span>
                       </div>
                       <StatusBadge status={s.status} />
@@ -257,6 +338,56 @@ export default function ScreensPage() {
           )}
         </div>
       </div>
+
+      {/* Bulk Action Toolbar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <div className="bg-card border border-primary/50 shadow-2xl rounded-full px-6 py-3 flex items-center gap-6 backdrop-blur-md">
+            <div className="flex items-center gap-2 pr-4 border-r border-border">
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <Select value={bulkPlaylistId} onValueChange={setBulkPlaylistId}>
+                <SelectTrigger className="w-[180px] h-9 bg-secondary/50 rounded-full border-none focus:ring-1 focus:ring-primary">
+                  <SelectValue placeholder="Assign Playlist..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Playlist</SelectItem>
+                  {playlists.map((p: any) => (
+                    <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Button 
+                size="sm" 
+                className="rounded-full px-4" 
+                disabled={!bulkPlaylistId || bulkPlaylistId === "none" || bulkMutation.isPending}
+                onClick={handleBulkAssign}
+              >
+                {bulkMutation.isPending ? "Assigning..." : "Assign"}
+              </Button>
+              
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setSelectedIds(new Set())}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ScreenDetailModal 
+        screen={selectedScreen} 
+        open={detailOpen} 
+        onOpenChange={setDetailOpen} 
+      />
     </DashboardLayout>
   );
 }

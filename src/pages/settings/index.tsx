@@ -4,9 +4,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { useTheme } from "next-themes";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { webhooksApi, type Webhook } from "@/services/api/webhooks";
+import { Plus, Trash2, Globe, Shield, Activity, RefreshCw } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -25,6 +38,7 @@ export default function SettingsPage() {
           <TabsList className="bg-secondary">
             <TabsTrigger value="account">Account</TabsTrigger>
             <TabsTrigger value="organization">Organization</TabsTrigger>
+            <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
             <TabsTrigger value="defaults">Screen Defaults</TabsTrigger>
             <TabsTrigger value="appearance">Appearance</TabsTrigger>
           </TabsList>
@@ -142,6 +156,10 @@ export default function SettingsPage() {
 
             <InstallPWAPrompt />
           </TabsContent>
+
+          <TabsContent value="webhooks" className="mt-6">
+            <WebhooksSettings />
+          </TabsContent>
         </Tabs>
       </div>
     </DashboardLayout>
@@ -232,6 +250,149 @@ function InstallPWAPrompt() {
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+function WebhooksSettings() {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [newWebhook, setNewWebhook] = useState({ url: "", secret: "", events: ["screen.offline"] });
+
+  const { data: webhooks = [], isLoading } = useQuery({
+    queryKey: ['webhooks'],
+    queryFn: webhooksApi.getAll
+  });
+
+  const createMutation = useMutation({
+    mutationFn: webhooksApi.create,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['webhooks'] });
+      setOpen(false);
+      setNewWebhook({ url: "", secret: "", events: ["screen.offline"] });
+      toast.success("Webhook created");
+    },
+    onError: (err: any) => toast.error(err.message || "Failed to create webhook")
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: webhooksApi.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['webhooks'] });
+      toast.success("Webhook deleted");
+    }
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (vars: { id: number, enabled: boolean }) => webhooksApi.update(vars.id, { enabled: vars.enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['webhooks'] });
+    }
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="p-6 border-b border-border flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-medium text-foreground">Outbound Webhooks</h2>
+            <p className="text-xs text-muted-foreground mt-1">Receive real-time notifications for system events</p>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm"><Plus className="h-4 w-4 mr-2" />Add Webhook</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add New Webhook</DialogTitle>
+                <DialogDescription>Configure a URL to receive ScreenFlow event notifications.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label>Payload URL</Label>
+                  <Input 
+                    placeholder="https://hooks.slack.com/services/..." 
+                    className="bg-secondary"
+                    value={newWebhook.url}
+                    onChange={e => setNewWebhook({...newWebhook, url: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Secret (Optional)</Label>
+                  <Input 
+                    type="password" 
+                    placeholder="X-ScreenFlow-Secret" 
+                    className="bg-secondary"
+                    value={newWebhook.secret}
+                    onChange={e => setNewWebhook({...newWebhook, secret: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-3">
+                  <Label>Events</Label>
+                  <div className="flex items-center gap-3 bg-secondary/30 p-3 rounded-md border border-border/50">
+                    <Checkbox id="evt-offline" checked={newWebhook.events.includes("screen.offline")} onCheckedChange={() => {}} />
+                    <Label htmlFor="evt-offline" className="text-sm cursor-pointer">screen.offline</Label>
+                  </div>
+                </div>
+                <Button 
+                  className="w-full" 
+                  onClick={() => createMutation.mutate(newWebhook as any)}
+                  disabled={!newWebhook.url || createMutation.isPending}
+                >
+                  {createMutation.isPending ? "Creating..." : "Create Webhook"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+
+        <div className="divide-y divide-border">
+          {isLoading ? (
+            <div className="p-10 text-center text-muted-foreground">
+              <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 opacity-20" />
+              <p className="text-xs">Loading webhooks...</p>
+            </div>
+          ) : webhooks.length === 0 ? (
+            <div className="p-10 text-center text-muted-foreground">
+              <Globe className="h-10 w-10 opacity-10 mx-auto mb-4" />
+              <p className="text-sm">No webhooks configured yet.</p>
+            </div>
+          ) : (
+            webhooks.map((wh: Webhook) => (
+              <div key={wh.id} className="p-4 flex items-center justify-between hover:bg-accent/5 transition-colors">
+                <div className="flex items-start gap-4">
+                  <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center">
+                    <Globe className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-foreground truncate max-w-[300px]">{wh.url}</h3>
+                    <div className="flex gap-2 mt-1">
+                      {wh.events.map(e => (
+                        <span key={e} className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-md border border-primary/20">{e}</span>
+                      ))}
+                      {wh.secret && <span className="text-[10px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded-md border border-border"><Shield className="h-2 w-2 inline mr-1" />Secret set</span>}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <Switch 
+                    checked={wh.enabled} 
+                    onCheckedChange={(checked) => toggleMutation.mutate({ id: wh.id, enabled: checked })} 
+                  />
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
+                    onClick={() => deleteMutation.mutate(wh.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }
