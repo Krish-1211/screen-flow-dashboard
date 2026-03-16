@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { WifiOff, AlertTriangle } from "lucide-react";
 import { syncService } from "@/services/sync-service";
 import { screensApi } from "@/services/api/screens";
-import { playlistsApi } from "@/services/api/playlists";
 import type { Playlist } from "@/types";
 
 export default function DisplayPlayerPage() {
-  const { screenId } = useParams();
+  const [searchParams] = useSearchParams();
+  const deviceId = searchParams.get("device_id");
   const [currentIndex, setCurrentIndex] = useState(0);
   const [connected, setConnected] = useState(navigator.onLine);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
@@ -42,27 +42,21 @@ export default function DisplayPlayerPage() {
   }, []);
 
   useEffect(() => {
-    if (!screenId) return;
+    if (!deviceId) return;
     let interval: any;
 
     const startHeartbeat = async () => {
       try {
-        // Ensure we are registered (gets the cookie if it's missing)
-        await screensApi.register();
-        
-        // Start periodic heartbeats (no device_id needed in body anymore)
-        screensApi.heartbeat().catch(console.error);
+        // Start periodic heartbeats with deviceId
+        screensApi.heartbeat(deviceId).catch(console.error);
         interval = setInterval(() => {
-          screensApi.heartbeat().catch(console.error);
+          screensApi.heartbeat(deviceId).catch(console.error);
         }, 30000);
 
         // Signal offline on tab close
         const handleUnload = () => {
-          const data = JSON.stringify({ status: 'offline' });
-          // Note: sendBeacon doesn't easily support cookies cross-origin in some browsers, 
-          // but since we are locking down identity to cookies, we'll rely on heartbeat timeout 
-          // if beacon fails to include the cookie session.
-          const url = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/screens/${screenId}`;
+          const data = JSON.stringify({ status: 'offline', device_id: deviceId });
+          const url = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/screens/heartbeat`;
           navigator.sendBeacon(url, data);
         };
         window.addEventListener('beforeunload', handleUnload);
@@ -79,26 +73,26 @@ export default function DisplayPlayerPage() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [screenId]);
+  }, [deviceId]);
 
   const loadPlaylist = useCallback(async () => {
-    if (!screenId) return;
+    if (!deviceId) return;
     try {
       setLoading(true);
-      const screen = await screensApi.getById(screenId);
+      // Fetch the full screen + playlist config using device_id
+      const data = await screensApi.getPlayerConfig(deviceId);
       
-      if (screen.playlistId) {
-        const pl = await playlistsApi.getById(screen.playlistId);
-        setPlaylist(pl);
-        localStorage.setItem(`offline-playlist-${screenId}`, JSON.stringify(pl));
-        // Active preloading for offline robustness
-        preloadMedia(pl);
+      if (data.id) {
+        // data here is a serialized playlist with items
+        setPlaylist(data);
+        localStorage.setItem(`offline-playlist-${deviceId}`, JSON.stringify(data));
+        preloadMedia(data);
       } else {
         setPlaylist(null);
       }
     } catch (err) {
       console.error("Failed to load playlist, trying offline storage", err);
-      const offline = localStorage.getItem(`offline-playlist-${screenId}`);
+      const offline = localStorage.getItem(`offline-playlist-${deviceId}`);
       if (offline) {
         const pl = JSON.parse(offline);
         setPlaylist(pl);
@@ -107,9 +101,13 @@ export default function DisplayPlayerPage() {
     } finally {
       setLoading(false);
     }
-  }, [screenId, preloadMedia]);
+  }, [deviceId, preloadMedia]);
 
   useEffect(() => {
+    if (!deviceId) {
+      setLoading(false);
+      return;
+    }
     loadPlaylist();
     const pollInterval = setInterval(loadPlaylist, 30000);
 
@@ -124,7 +122,7 @@ export default function DisplayPlayerPage() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [loadPlaylist, screenId]);
+  }, [loadPlaylist, deviceId]);
 
   const advanceMedia = useCallback(() => {
     setMediaError(false);
@@ -156,6 +154,16 @@ export default function DisplayPlayerPage() {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
+      </div>
+    );
+  }
+
+  if (!deviceId) {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white">
+        <AlertTriangle className="w-16 h-16 text-red-500 mb-4" />
+        <h1 className="text-3xl font-bold">No Screen ID Provided</h1>
+        <p className="mt-2 text-gray-400">Please use the URL generated from the dashboard.</p>
       </div>
     );
   }

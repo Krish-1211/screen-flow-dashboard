@@ -34,12 +34,12 @@ HEARTBEAT_TIMEOUT_SECONDS = 60
 
 
 class ScreenRegisterPayload(BaseModel):
-    name: str | None = None
+    name: str
+    playlist_id: int | None = None
 
 
 class ScreenHeartbeatPayload(BaseModel):
-    # No longer takes device_id in body
-    pass
+    device_id: str
 
 
 class ScreenUpdatePayload(BaseModel):
@@ -95,80 +95,54 @@ def get_screen(screen_id: int, db: Session = Depends(get_db)):
 
 @router.post("/register", response_model=dict)
 def register_screen(
-    request: Request,
-    response: Response,
     payload: ScreenRegisterPayload,
     db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
 ):
-    device_id = request.cookies.get("sf_device_id")
-    is_new_id = False
-
-    if not device_id:
-        device_id = str(uuid.uuid4())
-        is_new_id = True
-
-    existing = db.query(Screen).filter(Screen.device_id == device_id).first()
-
-    if not existing:
-        # Enforce license limits
-        active_license = db.query(License).first()
-        if not active_license:
-            # For local development, create a default license if no license.json found
-            active_license = License(
-                license_key="dev-local",
-                max_screens=100,
-                expiry_date=datetime(2099, 1, 1).date(),
-                signature="dev",
-                licensee="Developer",
-                tier="Growth",
-            )
-            db.add(active_license)
-            db.commit()
-            db.refresh(active_license)
-
-        # count existing screens
-        screen_count = db.query(Screen).count()
-        if screen_count >= active_license.max_screens:
-            raise HTTPException(status_code=403, detail="screen limit reached")
-
-        name = payload.name or f"Screen-{random.randint(1000, 9999)}"
-        existing = Screen(
-            name=name,
-            device_id=device_id,
-            status="online",
-            last_seen=datetime.utcnow(),
+    # Enforce license limits
+    active_license = db.query(License).first()
+    if not active_license:
+        active_license = License(
+            license_key="dev-local",
+            max_screens=100,
+            expiry_date=datetime(2099, 1, 1).date(),
+            signature="dev",
+            licensee="Developer",
+            tier="Growth",
         )
-        db.add(existing)
+        db.add(active_license)
         db.commit()
-        db.refresh(existing)
+        db.refresh(active_license)
 
-    # Set/Refresh cookie
-    response.set_cookie(
-        key="sf_device_id",
-        value=device_id,
-        httponly=True,
-        samesite="strict",
-        max_age=31536000,  # 1 year
-        secure=request.url.scheme == "https",
+    screen_count = db.query(Screen).count()
+    if screen_count >= active_license.max_screens:
+        raise HTTPException(status_code=403, detail="screen limit reached")
+
+    device_id = str(uuid.uuid4())
+    
+    new_screen = Screen(
+        name=payload.name,
+        device_id=device_id,
+        current_playlist_id=payload.playlist_id,
+        status="offline",
+        last_seen=None,
     )
+    db.add(new_screen)
+    db.commit()
+    db.refresh(new_screen)
 
-    return {
-        "screen_id": existing.id,
-        "playlist": existing.current_playlist_id,
-    }
+    write_audit_log(db, current_user['id'], "register", "screen", new_screen.id, meta={"device_id": device_id})
+
+    return serialize_screen(new_screen)
 
 
 @public_router.post("/heartbeat", response_model=dict)
 def heartbeat(
-    request: Request,
     payload: ScreenHeartbeatPayload,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    device_id = request.cookies.get("sf_device_id")
-    if not device_id:
-        raise HTTPException(status_code=401, detail="Missing device session")
-
+    device_id = payload.device_id
     screen = db.query(Screen).filter(Screen.device_id == device_id).first()
     if not screen:
         raise HTTPException(status_code=404, detail="Screen not registered")
@@ -194,16 +168,26 @@ def heartbeat(
             s.status = "offline"
             # Trigger webhooks
             for wh in webhooks:
-                payload = {
+                payload_wh = {
                     "event": "screen.offline",
                     "screen_id": s.id,
                     "screen_name": s.name,
                     "last_seen": s.last_seen.isoformat() + "Z" if s.last_seen else None
                 }
-                background_tasks.add_task(dispatch_webhook, wh.url, wh.secret, payload)
+                background_tasks.add_task(dispatch_webhook, wh.url, wh.secret, payload_wh)
 
     db.commit()
     return serialize_screen(screen)
+
+
+@public_router.get("/player", response_model=dict)
+def get_player_config(device_id: str, db: Session = Depends(get_db)):
+    screen = db.query(Screen).filter(Screen.device_id == device_id).first()
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+
+    # Reuse the playlist logic
+    return get_screen_playlist(screen.id, db)
 
 
 @router.put("/{screen_id}", response_model=dict)

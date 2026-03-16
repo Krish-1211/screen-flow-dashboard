@@ -120,7 +120,7 @@ const App = () => (
               <Routes>
                 {/* Public Routes */}
                 <Route path="/login" element={<LoginPage />} />
-                <Route path="/display/:screenId" element={<DisplayPlayerPage />} />
+                <Route path="/display" element={<DisplayPlayerPage />} />
 
                 {/* Protected Protected Routes */}
                 <Route path="/" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />

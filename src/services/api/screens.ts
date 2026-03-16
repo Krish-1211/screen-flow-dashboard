@@ -25,19 +25,16 @@ export const screensApi = {
             device_id: s.device_id
         } as Screen;
     },
-    create: async (payload: Partial<Screen>): Promise<Screen> => {
-        // Backend register now reads from cookie or generates UUID
-        const response = await api.post('/screens/register', {
-            name: payload.name
-        }, { withCredentials: true });
+    create: async (payload: { name: string, playlist_id?: number }): Promise<Screen> => {
+        const response = await api.post('/screens/register', payload);
         const s = response.data;
         return {
-            id: s.screen_id,
-            name: payload.name || 'New Screen',
-            status: 'online',
-            playlistId: s.playlist,
-            lastPing: new Date().toISOString(),
-            device_id: '' // Will be handled by cookie locally
+            id: s.id,
+            name: s.name,
+            status: s.status,
+            playlistId: s.playlistId,
+            lastPing: s.last_seen,
+            device_id: s.device_id
         } as Screen;
     },
     update: async (id: string | number, payload: Partial<Screen>): Promise<Screen> => {
@@ -59,12 +56,11 @@ export const screensApi = {
     delete: async (id: string | number): Promise<void> => {
         await api.delete(`/screens/${id}`);
     },
-    heartbeat: async (): Promise<void> => {
-        // device_id is now read from cookie on backend
-        await api.post('/screens/heartbeat', {}, { withCredentials: true });
+    heartbeat: async (device_id: string): Promise<void> => {
+        await api.post('/screens/heartbeat', { device_id });
     },
-    register: async (name?: string): Promise<{ screen_id: number, playlist: number }> => {
-        const response = await api.post('/screens/register', { name }, { withCredentials: true });
+    getPlayerConfig: async (device_id: string): Promise<any> => {
+        const response = await api.get(`/screens/player?device_id=${device_id}`);
         return response.data;
     },
     bulkUpdate: async (screen_ids: number[], playlist_id: number): Promise<{ updated: number, playlist_id: number }> => {

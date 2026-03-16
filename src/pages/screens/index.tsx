@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, MoreHorizontal, RefreshCw, Monitor, CheckCircle2, X, Calendar } from "lucide-react";
+import { Plus, MoreHorizontal, RefreshCw, Monitor, CheckCircle2, X, Calendar, Copy } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ export default function ScreensPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkPlaylistId, setBulkPlaylistId] = useState<string>("");
   const [newName, setNewName] = useState("");
+  const [newPlaylistId, setNewPlaylistId] = useState<string>("none");
   const [open, setOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedScreen, setSelectedScreen] = useState<any>(null);
@@ -55,10 +56,11 @@ export default function ScreensPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => screensApi.create({ name }),
+    mutationFn: (payload: { name: string, playlist_id?: number }) => screensApi.create(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['screens'] });
       setNewName("");
+      setNewPlaylistId("none");
       setOpen(false);
       toast.success("Screen registered successfully");
     },
@@ -107,8 +109,20 @@ export default function ScreensPage() {
   });
 
   const addScreen = () => {
-    const nameToRegister = newName.trim() || "New Screen";
-    createMutation.mutate(nameToRegister);
+    if (!newName.trim()) {
+      toast.error("Screen name is required");
+      return;
+    }
+    createMutation.mutate({
+      name: newName.trim(),
+      playlist_id: newPlaylistId === "none" ? undefined : parseInt(newPlaylistId)
+    });
+  };
+
+  const copyPlayerUrl = (deviceId: string) => {
+    const url = `${window.location.origin}/display?device_id=${deviceId}`;
+    navigator.clipboard.writeText(url);
+    toast.success("Player URL copied to clipboard");
   };
 
   const handlePlaylistChange = (screenId: string, playlistId: string) => {
@@ -155,13 +169,13 @@ export default function ScreensPage() {
             </Button>
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button><Plus className="h-4 w-4 mr-2" />Add Screen</Button>
+                <Button><Plus className="h-4 w-4 mr-2" />Register Screen</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Register New Screen</DialogTitle>
                   <DialogDescription>
-                    Add a name for your screen to easily identify it in the dashboard.
+                    Create a screen record and assign a playlist. You can then copy the player URL to your device.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 pt-2">
@@ -174,14 +188,22 @@ export default function ScreensPage() {
                       className="bg-secondary"
                     />
                   </div>
-                  <div className="bg-secondary rounded-lg p-4 text-sm space-y-2">
-                    <p className="text-muted-foreground">After adding, open the display URL on your device:</p>
-                    <code className="text-xs text-primary block bg-background rounded px-3 py-2 font-mono">
-                      /display/[auto-generated-id]
-                    </code>
+                  <div className="space-y-2">
+                    <Label>Initial Playlist</Label>
+                    <Select value={newPlaylistId} onValueChange={setNewPlaylistId}>
+                      <SelectTrigger className="bg-secondary">
+                        <SelectValue placeholder="Select Playlist" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No Playlist</SelectItem>
+                        {playlists.map((p: any) => (
+                          <SelectItem key={p.id} value={p.id.toString()}>{p.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <Button onClick={addScreen} disabled={createMutation.isPending} className="w-full">
-                    {createMutation.isPending ? "Generating..." : "Generate New Device ID"}
+                    {createMutation.isPending ? "Registering..." : "Register Screen"}
                   </Button>
                 </div>
               </DialogContent>
@@ -275,7 +297,11 @@ export default function ScreensPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => window.open(`/display/${s.id}`, '_blank')}>Open Player</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => window.open(`/display?device_id=${s.device_id}`, '_blank')}>Open Player</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => copyPlayerUrl(s.device_id)}>
+                                <Copy className="h-4 w-4 mr-2" />
+                                Copy Player URL
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => deleteMutation.mutate(s.id)} className="text-destructive">Delete</DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -327,7 +353,8 @@ export default function ScreensPage() {
                     <div className="flex justify-between items-center text-xs text-muted-foreground border-t border-border/50 pt-3">
                       <span>Last: {s.lastPing ? new Date(s.lastPing).toLocaleTimeString() : 'Never'}</span>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => window.open(`/display/${s.id}`, '_blank')}>Open</Button>
+                        <Button variant="outline" size="sm" onClick={() => window.open(`/display?device_id=${s.device_id}`, '_blank')}>Open</Button>
+                        <Button variant="outline" size="sm" onClick={() => copyPlayerUrl(s.device_id)}><Copy className="h-3 w-3" /></Button>
                         <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(s.id)} className="text-destructive">Delete</Button>
                       </div>
                     </div>
