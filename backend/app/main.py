@@ -65,7 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(schedules.router, prefix="/schedules", tags=["schedules"], dependencies=[Depends(get_current_user)])
     app.include_router(audit.router, prefix="/audit", tags=["audit"], dependencies=[Depends(get_current_user)])
 
-    @app.get("/health")
+    @app.api_route("/health", methods=["GET", "HEAD"])
     def health_check():
         return {"status": "ok"}
 
