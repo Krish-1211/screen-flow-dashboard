@@ -161,7 +161,7 @@ async def heartbeat(
         # Get active webhooks for screen.offline
         webhooks = db.query(Webhook).filter(
             Webhook.enabled == True,
-            Webhook.events.contains(["screen.offline"])
+            Webhook.events.any_("screen.offline")
         ).all()
 
         for s in stale_screens:
