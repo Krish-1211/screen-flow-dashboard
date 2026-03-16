@@ -36,7 +36,7 @@ def create_app() -> FastAPI:
     if not cors_allowed_origins:
         raise ValueError("CORS_ALLOWED_ORIGINS must be set. Example: http://10.0.0.50:3000")
     
-    origins = [origin.strip() for origin in cors_allowed_origins.split(",") if origin.strip()]
+    origins = [origin.strip().rstrip("/") for origin in cors_allowed_origins.split(",") if origin.strip()]
 
     # CORS middleware
     app.add_middleware(
