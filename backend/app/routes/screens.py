@@ -13,6 +13,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from ..database import get_db
 from ..models.screen import Screen
@@ -161,7 +162,7 @@ async def heartbeat(
         # Get active webhooks for screen.offline
         webhooks = db.query(Webhook).filter(
             Webhook.enabled == True,
-            Webhook.events.any_("screen.offline")
+            text("'screen.offline' = ANY(events)")
         ).all()
 
         for s in stale_screens:
@@ -283,7 +284,7 @@ def get_screen_playlist(screen_id: int, db: Session = Depends(get_db)):
         Schedule.active == True,
         Schedule.start_time <= current_time,
         Schedule.end_time >= current_time,
-        Schedule.days_of_week.any_(current_day)
+        Schedule.days_of_week.any(current_day)
     ).first()
 
     playlist_id = screen.current_playlist_id

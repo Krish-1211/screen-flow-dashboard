@@ -171,7 +171,7 @@ def get_active_schedule(screen_id: int, db: Session = Depends(get_db)):
         Schedule.active == True,
         Schedule.start_time <= current_time,
         Schedule.end_time >= current_time,
-        Schedule.days_of_week.any_(current_day)
+        Schedule.days_of_week.any(current_day)
     ).first()
     
     return schedule
