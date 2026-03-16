@@ -57,10 +57,10 @@ export const screensApi = {
         await api.delete(`/screens/${id}`);
     },
     heartbeat: async (device_id: string): Promise<void> => {
-        await api.post('/screens/heartbeat', { device_id });
+        await api.post('/public/screens/heartbeat', { device_id });
     },
     getPlayerConfig: async (device_id: string): Promise<any> => {
-        const response = await api.get(`/screens/player?device_id=${device_id}`);
+        const response = await api.get(`/public/screens/player?device_id=${device_id}`);
         return response.data;
     },
     bulkUpdate: async (screen_ids: number[], playlist_id: number): Promise<{ updated: number, playlist_id: number }> => {

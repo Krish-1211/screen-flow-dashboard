@@ -54,7 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
     
     # Signage routers (Public)
-    app.include_router(screens.public_router, prefix="/screens", tags=["screens-public"])
+    app.include_router(screens.public_router, prefix="/public/screens", tags=["screens-public"])
 
     # Management routers (Protected)
     app.include_router(media.router, prefix="/media", tags=["media"], dependencies=[Depends(get_current_user)])
