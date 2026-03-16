@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Time, ARRAY, ForeignKey, CheckConstraint
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Time, ForeignKey, CheckConstraint
+from sqlalchemy.dialects.postgresql import ARRAY
 from datetime import datetime
 from ..database import Base
 

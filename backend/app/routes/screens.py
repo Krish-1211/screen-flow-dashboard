@@ -283,7 +283,7 @@ def get_screen_playlist(screen_id: int, db: Session = Depends(get_db)):
         Schedule.active == True,
         Schedule.start_time <= current_time,
         Schedule.end_time >= current_time,
-        Schedule.days_of_week.contains([current_day])
+        Schedule.days_of_week.any_(current_day)
     ).first()
 
     playlist_id = screen.current_playlist_id
