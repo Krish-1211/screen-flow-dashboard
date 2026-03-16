@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { WifiOff, AlertTriangle } from "lucide-react";
-import { wsService } from "@/services/websocket";
+import { syncService } from "@/services/sync-service";
 import { screensApi } from "@/services/api/screens";
 import { playlistsApi } from "@/services/api/playlists";
 import type { Playlist } from "@/types";
@@ -111,13 +111,7 @@ export default function DisplayPlayerPage() {
 
   useEffect(() => {
     loadPlaylist();
-    wsService.connect();
-    if (screenId) {
-      wsService.subscribeToScreen(screenId);
-    }
-
-    wsService.on("playlist-updated", loadPlaylist);
-    wsService.on("screen-refresh", () => window.location.reload());
+    const pollInterval = setInterval(loadPlaylist, 30000);
 
     const handleOnline = () => setConnected(true);
     const handleOffline = () => setConnected(false);
@@ -126,8 +120,7 @@ export default function DisplayPlayerPage() {
     window.addEventListener('offline', handleOffline);
 
     return () => {
-      wsService.off("playlist-updated", loadPlaylist);
-      wsService.off("screen-refresh");
+      clearInterval(pollInterval);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };

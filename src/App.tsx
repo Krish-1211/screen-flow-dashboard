@@ -6,9 +6,8 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/lib/supabase";
 import { ThemeProvider } from "@/components/theme-provider";
-import { wsService } from "@/services/websocket";
+import { syncService } from "@/services/sync-service";
 
 const DashboardPage = lazy(() => import("./pages/dashboard"));
 const ScreensPage = lazy(() => import("./pages/screens"));
@@ -81,28 +80,28 @@ const DefaultFallback = () => (
   </div>
 );
 
-const RealtimeManager = () => {
+const SyncManager = () => {
   useEffect(() => {
-    wsService.connect();
+    syncService.connect();
     
     // Global invalidations
-    wsService.on('screen-refresh', () => {
-      console.log('Realtime: Screen update detected');
+    syncService.on('screen-refresh', () => {
+      console.log('Sync: Refreshing screens...');
       queryClient.invalidateQueries({ queryKey: ['screens'] });
     });
     
-    wsService.on('playlist-updated', () => {
-      console.log('Realtime: Playlist update detected');
+    syncService.on('playlist-updated', () => {
+      console.log('Sync: Refreshing playlists...');
       queryClient.invalidateQueries({ queryKey: ['playlists'] });
       queryClient.invalidateQueries({ queryKey: ['media'] });
     });
 
-    wsService.on('schedule-updated', () => {
-      console.log('Realtime: Schedule update detected');
+    syncService.on('schedule-updated', () => {
+      console.log('Sync: Refreshing schedules...');
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
     });
 
-    return () => wsService.disconnect();
+    return () => syncService.disconnect();
   }, []);
 
   return null;
@@ -110,7 +109,7 @@ const RealtimeManager = () => {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <RealtimeManager />
+    <SyncManager />
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme" attribute="class" enableSystem={false}>
       <TooltipProvider>
         <Toaster />

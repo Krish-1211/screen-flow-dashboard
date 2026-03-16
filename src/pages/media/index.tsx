@@ -98,7 +98,7 @@ export default function MediaLibraryPage() {
                   {uploadMutation.isPending ? (
                     <div className="flex flex-col items-center">
                       <RefreshCw className="h-8 w-8 text-primary animate-spin mb-3" />
-                      <p className="text-sm text-foreground">Uploading to Supabase...</p>
+                      <p className="text-sm text-foreground">Uploading to storage...</p>
                     </div>
                   ) : (
                     <>
