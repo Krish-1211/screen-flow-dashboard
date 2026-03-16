@@ -53,7 +53,10 @@ def create_app() -> FastAPI:
     # Routers
     app.include_router(auth.router, prefix="/auth", tags=["auth"])
     
-    # Protected management routers
+    # Signage routers (Public)
+    app.include_router(screens.public_router, prefix="/screens", tags=["screens-public"])
+
+    # Management routers (Protected)
     app.include_router(media.router, prefix="/media", tags=["media"], dependencies=[Depends(get_current_user)])
     app.include_router(playlists.router, prefix="/playlists", tags=["playlists"], dependencies=[Depends(get_current_user)])
     app.include_router(screens.router, prefix="/screens", tags=["screens"], dependencies=[Depends(get_current_user)])
@@ -61,9 +64,6 @@ def create_app() -> FastAPI:
     app.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"], dependencies=[Depends(get_current_user)])
     app.include_router(schedules.router, prefix="/schedules", tags=["schedules"], dependencies=[Depends(get_current_user)])
     app.include_router(audit.router, prefix="/audit", tags=["audit"], dependencies=[Depends(get_current_user)])
-    
-    # Public signage routers
-    app.include_router(screens.public_router, prefix="/screens", tags=["screens-public"])
 
     @app.get("/health")
     def health_check():

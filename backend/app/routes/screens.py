@@ -137,7 +137,7 @@ def register_screen(
 
 
 @public_router.post("/heartbeat", response_model=dict)
-def heartbeat(
+async def heartbeat(
     payload: ScreenHeartbeatPayload,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -181,7 +181,7 @@ def heartbeat(
 
 
 @public_router.get("/player", response_model=dict)
-def get_player_config(device_id: str, db: Session = Depends(get_db)):
+async def get_player_config(device_id: str, db: Session = Depends(get_db)):
     screen = db.query(Screen).filter(Screen.device_id == device_id).first()
     if not screen:
         raise HTTPException(status_code=404, detail="Screen not found")
