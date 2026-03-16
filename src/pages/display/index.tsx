@@ -56,7 +56,7 @@ export default function DisplayPlayerPage() {
         // Signal offline on tab close
         const handleUnload = () => {
           const data = JSON.stringify({ status: 'offline', device_id: deviceId });
-          const url = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/public/screens/heartbeat`;
+          const url = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/screens/heartbeat`;
           navigator.sendBeacon(url, data);
         };
         window.addEventListener('beforeunload', handleUnload);
