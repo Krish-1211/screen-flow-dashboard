@@ -9,7 +9,7 @@ from ..models.media import Media
 from ..models.playlist import Playlist, PlaylistItem
 from ..auth import get_current_user
 from ..services.audit import write_audit_log
-from ..services.storage import get_presigned_url
+from ..services.storage import get_presigned_url, get_proxy_url
 
 
 class PlaylistItemPayload(BaseModel):
@@ -53,7 +53,7 @@ def serialize_playlist(pl: Playlist, db: Session) -> dict:
                     "type": "video"
                     if media.file_type.startswith("video")
                     else "image",
-                    "url": get_presigned_url(media.filename) if media.filename else None,
+                    "url": get_proxy_url(media.filename) if media.filename else None,
                 }
                 if media
                 else None,

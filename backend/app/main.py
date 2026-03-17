@@ -17,6 +17,7 @@ REQUIRED_ENV_VARS = [
     "B2_KEY_ID",
     "B2_APPLICATION_KEY",
     "B2_BUCKET_NAME",
+    "API_BASE_URL",
 ]
 def create_app() -> FastAPI:
     # Startup validation
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(screens.public_router, prefix="/screens", tags=["screens-public"])
 
     # Management routers (Protected)
+    app.include_router(media.public_router, prefix="/media", tags=["media-public"])
     app.include_router(media.router, prefix="/media", tags=["media"], dependencies=[Depends(get_current_user)])
     app.include_router(playlists.router, prefix="/playlists", tags=["playlists"], dependencies=[Depends(get_current_user)])
     app.include_router(screens.router, prefix="/screens", tags=["screens"], dependencies=[Depends(get_current_user)])

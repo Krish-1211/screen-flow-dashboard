@@ -34,6 +34,11 @@ def get_presigned_url(object_key: str, expires_in: int = 86400) -> str:
     )
     return url
 
+def get_proxy_url(filename: str) -> str:
+    """Returns the proxy URL for a media file."""
+    base_url = os.environ.get("API_BASE_URL", "").rstrip("/")
+    return f"{base_url}/media/proxy/{filename}"
+
 def delete_file(object_key: str):
     try:
         client = get_b2_client()

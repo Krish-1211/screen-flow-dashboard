@@ -31,6 +31,8 @@ services:
         value: "3.11.0"
       - key: RENDER
         value: "true"
+      - key: API_BASE_URL
+        value: "https://screen-api-6sac.onrender.com"
 
   - type: web
     name: screenflow-dashboard

@@ -17,6 +17,7 @@ from ..models.media import Media
 from ..auth import get_current_user
 from ..services.audit import write_audit_log
 from ..services import storage
+from ..services.storage import get_proxy_url
 import tempfile
 
 
@@ -33,6 +34,47 @@ class YouTubePayload(BaseModel):
 
 
 router = APIRouter()
+public_router = APIRouter()
+
+
+@public_router.get("/proxy/{filename:path}", include_in_schema=False)
+async def proxy_media(filename: str):
+    """
+    Public endpoint that proxies media files from B2.
+    No auth required — used by the player to fetch media.
+    This solves CORS issues since the browser talks to our
+    own API instead of B2 directly.
+    """
+    import httpx
+    from fastapi.responses import StreamingResponse
+    from ..services.storage import get_presigned_url
+
+    try:
+        url = get_presigned_url(filename)
+        async with httpx.AsyncClient() as client:
+            # Using stream=True for large media files if needed, but here we just get the response
+            # Note: For production, consider using a more robust proxying mechanism
+            response = await client.get(url, timeout=30.0)
+            
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="Failed to fetch from storage")
+
+        content_type = response.headers.get(
+            "content-type", "application/octet-stream"
+        )
+        
+        return StreamingResponse(
+            iter([response.content]),
+            media_type=content_type,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Cache-Control": "public, max-age=86400",
+                "Content-Disposition": response.headers.get("content-disposition", ""),
+            }
+        )
+    except Exception as e:
+        print(f"Proxy error: {e}")
+        raise HTTPException(status_code=404, detail="Media not found")
 
 
 def sanitise_filename(filename: str) -> str:
@@ -60,7 +102,7 @@ def list_media(db: Session = Depends(get_db)):
             "id": m.id,
             "name": m.filename,
             "type": "video" if m.file_type.startswith("video") else "image",
-            "url": storage.get_presigned_url(m.filename) if m.filename else None,
+            "url": get_proxy_url(m.filename) if m.filename else None,
             "duration": m.duration,
             "uploaded_at": m.uploaded_at.isoformat() + "Z",
         }
@@ -112,7 +154,7 @@ async def upload_media(
             "id": media.id,
             "name": media.filename,
             "type": file_type,
-            "url": storage.get_presigned_url(media.filename),
+            "url": get_proxy_url(media.filename),
             "duration": media.duration,
         }
     finally:
@@ -190,7 +232,7 @@ async def add_youtube_media(
                 "id": media.id,
                 "name": media.filename,
                 "type": "video",
-                "url": storage.get_presigned_url(media.filename),
+                "url": get_proxy_url(media.filename),
                 "duration": media.duration,
             }
         
