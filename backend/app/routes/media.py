@@ -49,22 +49,33 @@ async def proxy_media(filename: str):
     from fastapi.responses import StreamingResponse
     from ..services.storage import get_presigned_url
 
+    # Strip any leading media/ prefix to avoid double prefix
+    clean_filename = filename.lstrip("/")
+    if clean_filename.startswith("media/"):
+        object_key = clean_filename
+    else:
+        object_key = f"media/{clean_filename}"
+
+    print(f"[PROXY] Requested filename: {filename}")
+    print(f"[PROXY] Using object key: {object_key}")
+
     try:
-        # Object key in B2 always has media/ prefix
-        object_key = f"media/{filename}"
         url = get_presigned_url(object_key)
-        
+        print(f"[PROXY] Pre-signed URL generated: {url[:80]}...")
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url)
-        
+
+        print(f"[PROXY] B2 response status: {response.status_code}")
+
         if response.status_code != 200:
-            raise HTTPException(status_code=404, detail="Media not found")
-            
-        # Detect content type from filename
+            print(f"[PROXY] B2 error body: {response.text[:200]}")
+            raise HTTPException(status_code=404, detail="Media not found in storage")
+
         ext = filename.lower().split('.')[-1]
         content_type_map = {
             'mp4': 'video/mp4',
-            'mov': 'video/quicktime', 
+            'mov': 'video/quicktime',
             'avi': 'video/x-msvideo',
             'jpg': 'image/jpeg',
             'jpeg': 'image/jpeg',
@@ -72,7 +83,7 @@ async def proxy_media(filename: str):
             'webp': 'image/webp',
         }
         content_type = content_type_map.get(ext, 'application/octet-stream')
-        
+
         return StreamingResponse(
             iter([response.content]),
             media_type=content_type,
@@ -85,7 +96,7 @@ async def proxy_media(filename: str):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Proxy error: {e}")
+        print(f"[PROXY] Exception: {type(e).__name__}: {e}")
         raise HTTPException(status_code=404, detail="Media not found")
 
 
