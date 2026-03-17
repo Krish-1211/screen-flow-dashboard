@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, GripVertical, Clock, Image as ImageIcon, Film, RefreshCw } from "lucide-react";
+import { Plus, Trash2, GripVertical, Clock, Image as ImageIcon, Film, RefreshCw, Edit2, Check, X, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +23,12 @@ export default function PlaylistsPage() {
   const updateMutation = useMutation({
     mutationFn: (vars: { id: string | number, name?: string, items?: any[] }) =>
       playlistsApi.update(vars.id, vars),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['playlists'] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['playlists'] });
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Failed to update playlist");
+    }
   });
 
   const { data: media = [] } = useQuery<Media[]>({
@@ -51,6 +57,14 @@ export default function PlaylistsPage() {
   };
 
   const selected = playlists.find((p: any) => p.id === selectedId);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState("");
+
+  useEffect(() => {
+    if (selected && !isEditingName) {
+      setTempName(selected.name);
+    }
+  }, [selected?.id, selected?.name, isEditingName]);
 
   const addItem = (m: any) => {
     if (!selected) return;
@@ -118,20 +132,35 @@ export default function PlaylistsPage() {
                       key={p.id}
                       onClick={() => setSelectedId(p.id)}
                       className={cn(
-                        "w-full text-left p-4 flex flex-row items-center justify-between hover:bg-accent/30 transition-colors cursor-pointer",
+                        "w-full text-left p-4 flex flex-row items-center justify-between hover:bg-accent/30 transition-colors cursor-pointer group",
                         String(selectedId) === String(p.id) && "bg-accent/50"
                       )}
                     >
-                      <div className="flex-1">
-                        <p className="text-sm text-foreground font-medium">{p.name}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground font-medium truncate">{p.name}</p>
                         <p className="text-xs text-muted-foreground mt-1">{p.items?.length || 0} items</p>
                       </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(p.id); }}
-                        className="text-muted-foreground hover:text-destructive p-2 shrink-0"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            setSelectedId(p.id);
+                            // Short timeout to ensure selectedId is updated before entering edit mode if it was different
+                            setTimeout(() => setIsEditingName(true), 0);
+                          }}
+                          className="text-muted-foreground hover:text-primary p-2 shrink-0"
+                          title="Rename playlist"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(p.id); }}
+                          className="text-muted-foreground hover:text-destructive p-2 shrink-0"
+                          title="Delete playlist"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -143,14 +172,93 @@ export default function PlaylistsPage() {
           <div className="lg:col-span-6 bg-card border border-border rounded-lg">
             {selected ? (
               <>
-                <div className="p-4 border-b border-border bg-card/50 flex flex-col gap-2">
-                  <Input
-                    value={selected.name}
-                    onChange={(e) => updatePlaylistName(e.target.value)}
-                    className="text-base font-semibold text-foreground bg-transparent border-none p-0 h-auto focus-visible:ring-0"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Total duration: {selected.items?.reduce((a: number, i: any) => a + (Number(i.duration) || 0), 0) || 0}s
+                <div className="p-4 border-b border-border bg-card/50 flex flex-col gap-1">
+                  <div className="flex items-center justify-between gap-2 group/header min-h-[40px]">
+                    {isEditingName ? (
+                      <div className="flex items-center gap-2 flex-1 animate-in fade-in duration-200">
+                        <Input
+                          value={tempName}
+                          onChange={(e) => setTempName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              if (tempName.trim() !== "" && tempName !== selected.name) {
+                                updatePlaylistName(tempName);
+                                setIsEditingName(false);
+                              } else if (tempName.trim() === "") {
+                                toast.error("Playlist name cannot be empty");
+                              } else {
+                                setIsEditingName(false);
+                              }
+                            } else if (e.key === 'Escape') {
+                              setTempName(selected.name);
+                              setIsEditingName(false);
+                            }
+                          }}
+                          onBlur={() => {
+                            // Delay slightly to allow button clicks to process
+                            setTimeout(() => {
+                              if (isEditingName) {
+                                setTempName(selected.name);
+                                setIsEditingName(false);
+                              }
+                            }, 200);
+                          }}
+                          autoFocus
+                          className="text-lg font-bold h-9 bg-secondary/50 focus-visible:ring-1 border-primary/20"
+                        />
+                        <div className="flex items-center gap-1">
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-8 w-8 p-0 text-primary hover:bg-primary/10" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (tempName.trim() !== "" && tempName !== selected.name) {
+                                updatePlaylistName(tempName);
+                              }
+                              setIsEditingName(false);
+                            }}
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-8 w-8 p-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTempName(selected.name);
+                              setIsEditingName(false);
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div 
+                        className="flex items-center gap-3 flex-1 cursor-pointer group/title"
+                        onClick={() => setIsEditingName(true)}
+                        title="Click to rename"
+                      >
+                        <h2 className="text-lg font-bold text-foreground group-hover/title:text-primary transition-colors">
+                          {selected.name}
+                        </h2>
+                        <div className="flex items-center gap-2">
+                          <Edit2 className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/title:opacity-100 transition-opacity" />
+                          {updateMutation.isPending && (
+                            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium bg-secondary px-2 py-0.5 rounded-full animate-pulse">
+                              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                              Saving...
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground font-medium flex items-center gap-1.5 ml-0.5">
+                    <Clock className="h-3 w-3" />
+                    Total: {selected.items?.length || 0} items • {selected.items?.reduce((a: number, i: any) => a + (Number(i.duration) || 0), 0) || 0}s duration
                   </p>
                 </div>
                 {!selected.items || selected.items.length === 0 ? (

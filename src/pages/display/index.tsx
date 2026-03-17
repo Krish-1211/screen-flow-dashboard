@@ -219,6 +219,7 @@ export default function DisplayPlayerPage() {
               autoPlay
               muted
               playsInline
+              crossOrigin="anonymous"
               onError={handleMediaError}
               onEnded={advanceMedia} // videos might dictate their own duration playback
             />
@@ -228,6 +229,7 @@ export default function DisplayPlayerPage() {
               src={mediaUrl}
               className="w-full h-full object-contain animate-in fade-in duration-1000"
               alt="Signage Content"
+              crossOrigin="anonymous"
               onError={handleMediaError}
             />
           )}

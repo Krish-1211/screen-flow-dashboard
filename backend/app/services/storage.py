@@ -3,13 +3,17 @@ import os
 from botocore.config import Config
 
 def get_b2_client():
+    # Backblaze B2 S3 API works best with v4 signatures and specific addressing styles
     return boto3.client(
         "s3",
-        endpoint_url=os.environ["B2_ENDPOINT"],
+        endpoint_url=os.environ["B2_ENDPOINT"].rstrip("/"),
         aws_access_key_id=os.environ["B2_KEY_ID"],
         aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
-        config=Config(signature_version="s3v4"),
-        region_name="us-east-005",
+        config=Config(
+            signature_version="s3v4",
+            s3={'addressing_style': 'virtual'}  # Better compatibility with B2 pre-signed URLs
+        ),
+        region_name=os.environ.get("B2_REGION", "us-east-005"),
     )
 
 def upload_file(local_path: str, object_key: str, content_type: str) -> str:

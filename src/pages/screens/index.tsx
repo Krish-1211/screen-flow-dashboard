@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, MoreHorizontal, RefreshCw, Monitor, CheckCircle2, X, Calendar, Copy } from "lucide-react";
+import { Plus, MoreHorizontal, RefreshCw, Monitor, CheckCircle2, X, Calendar, Copy, QrCode } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,8 @@ export default function ScreensPage() {
   const [open, setOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedScreen, setSelectedScreen] = useState<any>(null);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [qrScreen, setQrScreen] = useState<any>(null);
 
   const { data: screens = [], isLoading: loadingScreens } = useQuery({
     queryKey: ['screens'],
@@ -123,6 +126,11 @@ export default function ScreensPage() {
     const url = `${window.location.origin}/display?device_id=${deviceId}`;
     navigator.clipboard.writeText(url);
     toast.success("Player URL copied to clipboard");
+  };
+
+  const showQr = (screen: any) => {
+    setQrScreen(screen);
+    setQrOpen(true);
   };
 
   const handlePlaylistChange = (screenId: string, playlistId: string) => {
@@ -302,6 +310,10 @@ export default function ScreensPage() {
                                 <Copy className="h-4 w-4 mr-2" />
                                 Copy Player URL
                               </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => showQr(s)}>
+                                <QrCode className="h-4 w-4 mr-2" />
+                                Show QR
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => deleteMutation.mutate(s.id)} className="text-destructive">Delete</DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -355,6 +367,7 @@ export default function ScreensPage() {
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={() => window.open(`/display?device_id=${s.device_id}`, '_blank')}>Open</Button>
                         <Button variant="outline" size="sm" onClick={() => copyPlayerUrl(s.device_id)}><Copy className="h-3 w-3" /></Button>
+                        <Button variant="outline" size="sm" onClick={() => showQr(s)}><QrCode className="h-3 w-3" /></Button>
                         <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(s.id)} className="text-destructive">Delete</Button>
                       </div>
                     </div>
@@ -409,6 +422,44 @@ export default function ScreensPage() {
           </div>
         </div>
       )}
+
+      <Dialog open={qrOpen} onOpenChange={setQrOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect ScreenFlow Player</DialogTitle>
+            <DialogDescription>
+              Open the ScreenFlow Player app on your display device and scan this code to connect.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center p-6 space-y-6">
+            <div className="bg-white p-4 rounded-xl shadow-lg border-4 border-primary/20">
+              {qrScreen && (
+                <QRCodeSVG
+                  value={JSON.stringify({
+                    serverUrl: window.location.origin,
+                    deviceId: qrScreen.device_id
+                  })}
+                  size={256}
+                  level="H"
+                />
+              )}
+            </div>
+            <div className="text-center space-y-2 w-full">
+              <p className="text-sm font-medium text-muted-foreground">Manual Setup Details</p>
+              <div className="bg-secondary p-3 rounded-lg text-xs font-mono break-all text-left space-y-1">
+                <div className="flex justify-between border-b border-border pb-1">
+                  <span className="text-muted-foreground">URL:</span>
+                  <span>{window.location.origin}</span>
+                </div>
+                <div className="flex justify-between pt-1">
+                  <span className="text-muted-foreground">ID:</span>
+                  <span>{qrScreen?.device_id}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <ScreenDetailModal 
         screen={selectedScreen} 
