@@ -50,14 +50,16 @@ async def proxy_media(filename: str):
     from ..services.storage import get_presigned_url
 
     try:
-        url = get_presigned_url(filename)
-        async with httpx.AsyncClient() as client:
-            # Using stream=True for large media files if needed, but here we just get the response
-            # Note: For production, consider using a more robust proxying mechanism
-            response = await client.get(url, timeout=30.0)
+        # Always use media/ prefix for B2 object key
+        object_key = f"media/{filename}" if not filename.startswith("media/") else filename
+        url = get_presigned_url(object_key)
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Using stream=True for large media files if needed
+            response = await client.get(url)
             
         if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="Failed to fetch from storage")
+            raise HTTPException(status_code=404, detail="Media not found")
 
         content_type = response.headers.get(
             "content-type", "application/octet-stream"
@@ -68,13 +70,15 @@ async def proxy_media(filename: str):
             media_type=content_type,
             headers={
                 "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "public, max-age=86400",
+                "Cache-Control": "public, max-age=3600",
                 "Content-Disposition": response.headers.get("content-disposition", ""),
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Proxy error: {e}")
-        raise HTTPException(status_code=404, detail="Media not found")
+        raise HTTPException(status_code=404, detail=f"Media not found: {str(e)}")
 
 
 def sanitise_filename(filename: str) -> str:
