@@ -16,19 +16,17 @@ services:
       - key: ADMIN_PASSWORD
         sync: false
       - key: CORS_ALLOWED_ORIGINS
-        sync: false
+        value: "https://screenflow-dashboard.onrender.com,http://localhost:5173"
       - key: HEARTBEAT_TIMEOUT_SECONDS
         value: "90"
-      - key: B2_ENDPOINT
-        value: "https://s3.us-east-005.backblazeb2.com"
-      - key: B2_KEY_ID
+      - key: SUPABASE_URL
         sync: false
-      - key: B2_APPLICATION_KEY
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: B2_BUCKET_NAME
-        value: "screenflow-media"
+      - key: SUPABASE_BUCKET_NAME
+        value: "media"
       - key: PYTHON_VERSION
-        value: "3.11.0"
+        value: "3.12.0"
       - key: RENDER
         value: "true"
       - key: API_BASE_URL
