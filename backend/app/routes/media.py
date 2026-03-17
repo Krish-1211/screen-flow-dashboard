@@ -137,7 +137,7 @@ def list_media(db: Session = Depends(get_db)):
             "name": m.name,
             "type": "video" if m.type.startswith("video") else "image",
             "url": get_proxy_url(m.name) if m.name else None,
-            "duration": float(m.duration) if m.duration else None,
+            "duration": float(m.duration) if m.duration is not None else None,
             "uploaded_at": m.created_at.isoformat() + "Z",
         }
         for m in items
