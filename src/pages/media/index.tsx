@@ -12,9 +12,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { useRef } from "react";
 
 export default function MediaLibraryPage() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -26,7 +30,13 @@ export default function MediaLibraryPage() {
 
   const deleteMutation = useMutation({
     mutationFn: mediaApi.delete,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['media'] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+      toast({ title: "Media deleted", variant: "default" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    }
   });
 
   const uploadMutation = useMutation({
@@ -34,6 +44,10 @@ export default function MediaLibraryPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       setUploadOpen(false);
+      toast({ title: "Upload successful", variant: "default" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     }
   });
 
@@ -43,6 +57,10 @@ export default function MediaLibraryPage() {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       setYoutubeUrl("");
       setUploadOpen(false);
+      toast({ title: "YouTube download added", variant: "default" });
+    },
+    onError: (err: any) => {
+      toast({ title: "YouTube download failed", description: err.message, variant: "destructive" });
     }
   });
 
@@ -84,7 +102,7 @@ export default function MediaLibraryPage() {
                   </DialogDescription>
                 </DialogHeader>
                 <div
-                  className={`border-2 border-dashed rounded-lg p-10 text-center transition-colors relative ${dragActive ? "border-primary bg-primary/5" : "border-border"
+                  className={`border-2 border-dashed rounded-lg p-10 text-center transition-colors relative cursor-pointer ${dragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
                     }`}
                   onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                   onDragLeave={() => setDragActive(false)}
@@ -94,6 +112,7 @@ export default function MediaLibraryPage() {
                     const file = e.dataTransfer.files?.[0];
                     if (file) uploadMutation.mutate(file);
                   }}
+                  onClick={() => fileInputRef.current?.click()}
                 >
                   {uploadMutation.isPending ? (
                     <div className="flex flex-col items-center">
@@ -103,17 +122,16 @@ export default function MediaLibraryPage() {
                   ) : (
                     <>
                       <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-                      <p className="text-sm text-foreground mb-1">Drag and drop files here</p>
+                      <p className="text-sm text-foreground mb-1">Drag and drop files here or click to select</p>
                       <p className="text-xs text-muted-foreground mb-4">JPG, PNG, MP4, WEBM</p>
-                      <div className="relative inline-block">
-                        <input
-                          type="file"
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                          onChange={handleFileSelect}
-                          accept="image/*,video/*"
-                        />
-                        <Button variant="outline" size="sm">Select Files</Button>
-                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                        accept="image/*,video/*"
+                      />
+                      <Button variant="outline" size="sm" type="button">Select Files</Button>
                     </>
                   )}
                 </div>

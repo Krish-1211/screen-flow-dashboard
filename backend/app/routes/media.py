@@ -183,27 +183,38 @@ async def upload_media(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    print(f"[MEDIA] Starting upload for {file.filename} ({file.content_type})")
     content_type = file.content_type or ""
     if not (content_type.startswith("image") or content_type.startswith("video")):
+        print(f"[MEDIA] Unsupported type: {content_type}")
         raise HTTPException(status_code=400, detail="Unsupported media type")
 
     safe_name = sanitise_filename(file.filename)
     file_type = "video" if content_type.startswith("video") else "image"
     
     # Save to a temporary file for processing
-    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(safe_name)[1]) as tmp:
-        tmp_path = tmp.name
-        while chunk := await file.read(1024 * 1024):
-            tmp.write(chunk)
-
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(safe_name)[1]) as tmp:
+            tmp_path = tmp.name
+            print(f"[MEDIA] Saving to temp file: {tmp_path}")
+            while chunk := await file.read(1024 * 1024):
+                tmp.write(chunk)
+        
+        file_size = os.path.getsize(tmp_path)
+        print(f"[MEDIA] File size: {file_size} bytes")
+        if file_size == 0:
+            raise ValueError("File is empty")
+
         # Construct the Supabase object key
         timestamp = int(datetime.utcnow().timestamp())
         unique_name = f"{timestamp}_{safe_name}"
         object_key = f"media/{unique_name}"
 
         # Upload to Supabase
+        print(f"[MEDIA] Uploading to Supabase as {object_key}...")
         object_key = storage.upload_file(tmp_path, object_key, content_type)
+        print(f"[MEDIA] Upload successful, stored key: {object_key}")
 
         media = Media(
             name=object_key,
@@ -214,6 +225,7 @@ async def upload_media(
         db.add(media)
         db.commit()
         db.refresh(media)
+        print(f"[MEDIA] Database record created with ID: {media.id}")
         
         write_audit_log(db, current_user['id'], "upload", "media", str(media.id), meta={"name": media.name})
 
@@ -224,10 +236,16 @@ async def upload_media(
             "url": get_proxy_url(media.name),
             "duration": media.duration,
         }
+    except Exception as e:
+        import traceback
+        print(f"[MEDIA] CRITICAL ERROR IN UPLOAD: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         # Clean up temp file
-        if os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+            print(f"[MEDIA] Cleaned up temp file: {tmp_path}")
 
 
 @router.post("/youtube", response_model=dict)
