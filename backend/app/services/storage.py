@@ -1,77 +1,81 @@
-import boto3
 import os
-from botocore.config import Config
+from supabase import create_client, Client
 
-def get_b2_client():
-    # Backblaze B2 S3 API works best with v4 signatures and specific addressing styles
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ["B2_ENDPOINT"].rstrip("/"),
-        aws_access_key_id=os.environ["B2_KEY_ID"],
-        aws_secret_access_key=os.environ["B2_APPLICATION_KEY"],
-        config=Config(
-            signature_version="s3v4",
-            s3={'addressing_style': 'virtual'}  # Better compatibility with B2 pre-signed URLs
-        ),
-        region_name=os.environ.get("B2_REGION", "us-east-005"),
-    )
+# Supabase Configuration
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET_NAME", "media")
+
+# Initialize client only if keys are present
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def upload_file(local_path: str, object_key: str, content_type: str) -> str:
-    client = get_b2_client()
-    bucket = os.environ["B2_BUCKET_NAME"]
-    client.upload_file(
-        local_path, bucket, object_key,
-        ExtraArgs={"ContentType": content_type}
-    )
+    """Uploads a file to Supabase Storage."""
+    if not supabase:
+        raise Exception("Supabase client not initialized")
+    
+    # Strip any leading 'media/' if the bucket is already called 'media' 
+    # BUT keep it if the user wants a folder structure within the bucket.
+    # In the previous B2 code, object_key was f"media/{unique_name}"
+    
+    with open(local_path, "rb") as f:
+        # opts = {"content-type": content_type} # Supabase storage3 uses file_options
+        try:
+            # Overwrite if exists to avoid failures during testing
+            supabase.storage.from_(SUPABASE_BUCKET).upload(
+                path=object_key,
+                file=f,
+                file_options={"content-type": content_type, "x-upsert": "true"}
+            )
+        except Exception as e:
+            # If upload fails, log it and re-raise or handle
+            print(f"[STORAGE] Upload failed: {e}")
+            raise e
+            
     return object_key
 
 def get_presigned_url(object_key: str, expires_in: int = 86400) -> str:
-    client = get_b2_client()
-    url = client.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": os.environ["B2_BUCKET_NAME"], "Key": object_key},
-        ExpiresIn=expires_in,
-    )
-    return url
+    """Generates a signed URL for a Supabase object."""
+    if not supabase:
+        return ""
+    
+    try:
+        # Supabase returns a dictionary with 'signedURL'
+        res = supabase.storage.from_(SUPABASE_BUCKET).create_signed_url(
+            path=object_key,
+            expires_in=expires_in
+        )
+        if isinstance(res, dict) and 'signedURL' in res:
+            return res['signedURL']
+        # Depending on SDK version it might return a string or dict
+        return str(res)
+    except Exception as e:
+        print(f"[STORAGE] Signed URL generation failed: {e}")
+        return ""
 
 def get_proxy_url(filename: str) -> str:
-    """Returns the proxy URL for a media file."""
+    """Returns the backend proxy URL for a media file."""
     base_url = os.environ.get("API_BASE_URL", "").rstrip("/")
-    # Strip media/ prefix if present since proxy adds it
+    # filename in DB is stored as the full object key (e.g. 'media/123_video.mp4')
+    # The proxy endpoint expects the path after /media/proxy/
+    # We strip 'media/' prefix if it's there because the proxy adds it back or handles it.
     clean_filename = filename.replace("media/", "")
     return f"{base_url}/media/proxy/{clean_filename}"
 
 def delete_file(object_key: str):
+    """Deletes a file from Supabase Storage."""
+    if not supabase:
+        return
     try:
-        client = get_b2_client()
-        client.delete_object(Bucket=os.environ["B2_BUCKET_NAME"], Key=object_key)
-    except Exception:
+        supabase.storage.from_(SUPABASE_BUCKET).remove([object_key])
+    except Exception as e:
+        print(f"[STORAGE] Delete failed: {e}")
         pass
 
 def configure_bucket_cors():
-    """Set CORS rules on the B2 bucket to allow browser playback."""
-    try:
-        client = get_b2_client()
-        bucket = os.environ["B2_BUCKET_NAME"]
-        client.put_bucket_cors(
-            Bucket=bucket,
-            CORSConfiguration={
-                'CORSRules': [
-                    {
-                        'AllowedHeaders': ['*'],
-                        'AllowedMethods': ['GET', 'HEAD'],
-                        'AllowedOrigins': [
-                            'https://screenflow-dashboard.onrender.com',
-                            'http://localhost:3000',
-                            'http://localhost:5173',
-                            'http://localhost:8000',
-                        ],
-                        'ExposeHeaders': ['Content-Length', 'Content-Type', 'Range'],
-                        'MaxAgeSeconds': 86400,
-                    }
-                ]
-            }
-        )
-        print(f"CORS configuration updated for bucket: {bucket}")
-    except Exception as e:
-        print(f"CORS configuration warning: {e}")
+    """Placeholder for Supabase CORS configuration."""
+    # Supabase CORS is typically configured in the dashboard under Storage > Policies
+    # or by default allows all origins for public buckets.
+    pass

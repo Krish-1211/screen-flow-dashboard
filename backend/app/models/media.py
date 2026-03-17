@@ -1,17 +1,18 @@
 from datetime import datetime
-
-from sqlalchemy import Column, DateTime, Integer, String
+import uuid
+from sqlalchemy import Column, DateTime, String, Numeric, text
+from sqlalchemy.dialects.postgresql import UUID
 
 from ..database import Base
-
 
 class Media(Base):
     __tablename__ = "media"
 
-    id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String, nullable=False)
-    file_type = Column(String, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False) # Maps to 'filename' in old code
+    type = Column(String, nullable=False) # Maps to 'file_type' in old code
     url = Column(String, nullable=False)
-    duration = Column(Integer, nullable=True)
-    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    duration = Column(Numeric, nullable=True) # Changed from Integer to Numeric
+    thumbnail = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, server_default=text('now()'), nullable=False)
 

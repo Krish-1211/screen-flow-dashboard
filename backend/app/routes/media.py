@@ -40,10 +40,10 @@ public_router = APIRouter()
 @public_router.get("/proxy/{filename:path}", include_in_schema=False)
 async def proxy_media(filename: str):
     """
-    Public endpoint that proxies media files from B2.
+    Public endpoint that proxies media files from Supabase.
     No auth required — used by the player to fetch media.
     This solves CORS issues since the browser talks to our
-    own API instead of B2 directly.
+    own API instead of Supabase directly.
     """
     import httpx
     from fastapi.responses import StreamingResponse
@@ -66,7 +66,7 @@ async def proxy_media(filename: str):
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url)
 
-        print(f"[PROXY] B2 response status: {response.status_code}")
+        print(f"[PROXY] Supabase response status: {response.status_code}")
 
         if response.status_code == 200:
             ext = filename.lower().split('.')[-1]
@@ -91,7 +91,7 @@ async def proxy_media(filename: str):
                 }
             )
         
-        print(f"[PROXY] B2 error body: {response.text[:200]}")
+        print(f"[PROXY] Supabase error body: {response.text[:200]}")
 
     except Exception as e:
         print(f"[PROXY] Exception: {type(e).__name__}: {e}")
@@ -130,15 +130,15 @@ def sanitise_filename(filename: str) -> str:
 
 @router.get("/", response_model=List[dict])
 def list_media(db: Session = Depends(get_db)):
-    items = db.query(Media).order_by(Media.uploaded_at.desc()).all()
+    items = db.query(Media).order_by(Media.created_at.desc()).all()
     return [
         {
-            "id": m.id,
-            "name": m.filename,
-            "type": "video" if m.file_type.startswith("video") else "image",
-            "url": get_proxy_url(m.filename) if m.filename else None,
-            "duration": m.duration,
-            "uploaded_at": m.uploaded_at.isoformat() + "Z",
+            "id": str(m.id),
+            "name": m.name,
+            "type": "video" if m.type.startswith("video") else "image",
+            "url": get_proxy_url(m.name) if m.name else None,
+            "duration": float(m.duration) if m.duration else None,
+            "uploaded_at": m.created_at.isoformat() + "Z",
         }
         for m in items
     ]
@@ -164,17 +164,17 @@ async def upload_media(
             tmp.write(chunk)
 
     try:
-        # Construct the R2 object key
+        # Construct the Supabase object key
         timestamp = int(datetime.utcnow().timestamp())
         unique_name = f"{timestamp}_{safe_name}"
         object_key = f"media/{unique_name}"
 
-        # Upload to B2
+        # Upload to Supabase
         object_key = storage.upload_file(tmp_path, object_key, content_type)
 
         media = Media(
-            filename=object_key,
-            file_type=content_type,
+            name=object_key,
+            type=content_type,
             url="", # No longer storing static URL in DB
             duration=None,
         )
@@ -182,13 +182,13 @@ async def upload_media(
         db.commit()
         db.refresh(media)
         
-        write_audit_log(db, current_user['id'], "upload", "media", media.id, meta={"filename": media.filename})
+        write_audit_log(db, current_user['id'], "upload", "media", str(media.id), meta={"name": media.name})
 
         return {
-            "id": media.id,
-            "name": media.filename,
+            "id": str(media.id),
+            "name": media.name,
             "type": file_type,
-            "url": get_proxy_url(media.filename),
+            "url": get_proxy_url(media.name),
             "duration": media.duration,
         }
     finally:
@@ -246,13 +246,13 @@ async def add_youtube_media(
             filename = actual_file.name
             content_type = "video/mp4" 
             
-            # Upload to B2
+            # Upload to Supabase
             object_key = f"media/{filename}"
             stored_key = storage.upload_file(str(actual_file), object_key, content_type)
             
             media = Media(
-                filename=stored_key,
-                file_type=content_type,
+                name=stored_key,
+                type=content_type,
                 url="", # No longer storing static URL in DB
                 duration=int(duration) if duration else None,
             )
@@ -260,13 +260,13 @@ async def add_youtube_media(
             db.commit()
             db.refresh(media)
             
-            write_audit_log(db, current_user['id'], "youtube_download", "media", media.id, meta={"url": url, "filename": media.filename})
+            write_audit_log(db, current_user['id'], "youtube_download", "media", str(media.id), meta={"url": url, "name": media.name})
             
             return {
-                "id": media.id,
-                "name": media.filename,
+                "id": str(media.id),
+                "name": media.name,
                 "type": "video",
-                "url": get_proxy_url(media.filename),
+                "url": get_proxy_url(media.name),
                 "duration": media.duration,
             }
         
@@ -278,7 +278,7 @@ async def add_youtube_media(
 
 @router.delete("/{media_id}", status_code=204)
 def delete_media(
-    media_id: int, 
+    media_id: str, 
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -286,13 +286,13 @@ def delete_media(
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
 
-    # Delete from B2
-    storage.delete_file(media.filename)
+    # Delete from Supabase
+    storage.delete_file(media.name)
 
     db.delete(media)
     db.commit()
     
-    write_audit_log(db, current_user['id'], "delete", "media", media_id)
+    write_audit_log(db, current_user['id'], "delete", "media", str(media_id))
 
 
 # Removed serve_media_file - media is now served via R2 public URLs.

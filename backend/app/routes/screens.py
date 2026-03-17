@@ -36,7 +36,7 @@ HEARTBEAT_TIMEOUT_SECONDS = 60
 
 class ScreenRegisterPayload(BaseModel):
     name: str
-    playlist_id: int | None = None
+    playlist_id: uuid.UUID | None = None
 
 
 class ScreenHeartbeatPayload(BaseModel):
@@ -45,13 +45,13 @@ class ScreenHeartbeatPayload(BaseModel):
 
 class ScreenUpdatePayload(BaseModel):
     name: str | None = None
-    current_playlist_id: int | None = None
+    playlist_id: uuid.UUID | None = None
     status: str | None = None
 
 
 class BulkAssignRequest(BaseModel):
-    screen_ids: List[int]
-    playlist_id: int
+    screen_ids: List[uuid.UUID]
+    playlist_id: uuid.UUID
 
 
 router = APIRouter()
@@ -59,24 +59,22 @@ public_router = APIRouter()
 
 
 def serialize_screen(screen: Screen) -> dict:
-    # Logic: If last_seen is within 60s, it's online, otherwise it's whatever is in the DB
     status = screen.status
-    if screen.last_seen:
-        is_recent = (datetime.utcnow() - screen.last_seen) < timedelta(seconds=60)
+    if screen.last_ping:
+        is_recent = (datetime.utcnow() - screen.last_ping) < timedelta(seconds=60)
         if is_recent:
             status = "online"
         elif status == "online":
-            # If it's stale but says online, it's actually offline
             status = "offline"
 
     return {
-        "id": screen.id,
+        "id": str(screen.id),
         "name": screen.name,
         "device_id": screen.device_id,
         "status": status,
-        "last_seen": screen.last_seen.isoformat() + "Z" if screen.last_seen else None,
-        "playlistId": screen.current_playlist_id,
-        "schedule_count": len([s for s in screen.schedules if s.active]) if hasattr(screen, 'schedules') else 0
+        "lastPing": screen.last_ping.isoformat() + "Z" if screen.last_ping else None,
+        "playlistId": str(screen.playlist_id) if screen.playlist_id else None,
+        "created_at": screen.created_at.isoformat() + "Z"
     }
 
 
@@ -87,7 +85,7 @@ def list_screens(db: Session = Depends(get_db)):
 
 
 @router.get("/{screen_id}", response_model=dict)
-def get_screen(screen_id: int, db: Session = Depends(get_db)):
+def get_screen(screen_id: str, db: Session = Depends(get_db)):
     s = db.query(Screen).filter(Screen.id == screen_id).first()
     if not s:
         raise HTTPException(status_code=404, detail="Screen not found")
@@ -124,9 +122,9 @@ def register_screen(
     new_screen = Screen(
         name=payload.name,
         device_id=device_id,
-        current_playlist_id=payload.playlist_id,
+        playlist_id=payload.playlist_id,
         status="offline",
-        last_seen=None,
+        last_ping=None,
     )
     db.add(new_screen)
     db.commit()
@@ -148,13 +146,13 @@ async def heartbeat(
     if not screen:
         raise HTTPException(status_code=404, detail="Screen not registered")
     
-    screen.last_seen = datetime.utcnow()
+    screen.last_ping = datetime.utcnow()
     screen.status = "online"
     
     # Check for other screens that went offline
     stale_threshold = datetime.utcnow() - timedelta(seconds=HEARTBEAT_TIMEOUT_SECONDS)
     stale_screens = db.query(Screen).filter(
-        Screen.last_seen < stale_threshold,
+        Screen.last_ping < stale_threshold,
         Screen.status != "offline"
     ).all()
 
@@ -173,7 +171,7 @@ async def heartbeat(
                     "event": "screen.offline",
                     "screen_id": s.id,
                     "screen_name": s.name,
-                    "last_seen": s.last_seen.isoformat() + "Z" if s.last_seen else None
+                    "last_seen": s.last_ping.isoformat() + "Z" if s.last_ping else None
                 }
                 background_tasks.add_task(dispatch_webhook, wh.url, wh.secret, payload_wh)
 
@@ -188,7 +186,7 @@ async def get_player_config(device_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Screen not found")
 
     # Reuse the playlist logic
-    return get_screen_playlist(screen.id, db)
+    return get_screen_playlist(str(screen.id), db)
 
 
 @router.put("/{screen_id}", response_model=dict)
@@ -205,14 +203,13 @@ def update_screen(
     if payload.name is not None:
         screen.name = payload.name
 
-    if payload.current_playlist_id is not None:
-        screen.current_playlist_id = payload.current_playlist_id
+    if payload.playlist_id is not None:
+        screen.playlist_id = payload.playlist_id
 
     if payload.status is not None:
         screen.status = payload.status
         if payload.status == "offline":
-            # Clear last_seen to force immediate offline status
-            screen.last_seen = datetime.utcnow() - timedelta(seconds=120)
+            screen.last_ping = datetime.utcnow() - timedelta(seconds=120)
 
     db.commit()
     db.refresh(screen)
@@ -236,9 +233,9 @@ def bulk_assign_playlist(
     if not db.query(Playlist).filter(Playlist.id == payload.playlist_id).first():
         raise HTTPException(status_code=404, detail=f"Playlist {payload.playlist_id} not found")
 
-    # Bulk update in transaction
+    # Bulk update
     db.query(Screen).filter(Screen.id.in_(payload.screen_ids)).update(
-        {"current_playlist_id": payload.playlist_id},
+        {"playlist_id": payload.playlist_id},
         synchronize_session=False
     )
     db.commit()
@@ -254,7 +251,7 @@ def bulk_assign_playlist(
 
 @router.delete("/{screen_id}", status_code=204)
 def delete_screen(
-    screen_id: int, 
+    screen_id: str, 
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -269,25 +266,24 @@ def delete_screen(
 
 
 @public_router.get("/{screen_id}/playlist", response_model=dict)
-def get_screen_playlist(screen_id: int, db: Session = Depends(get_db)):
+def get_screen_playlist(screen_id: str, db: Session = Depends(get_db)):
     screen = db.query(Screen).filter(Screen.id == screen_id).first()
     if not screen:
         raise HTTPException(status_code=404, detail="Screen not found")
 
     # Check for active schedule
-    now = datetime.utcnow() # Assuming server time is UTC
-    current_time = now.time()
-    current_day = now.weekday()
+    now = datetime.utcnow()
+    current_hour = now.hour
+    current_day_name = now.strftime("%A") # Monday, Tuesday, etc.
     
     active_sch = db.query(Schedule).filter(
-        Schedule.screen_id == screen_id,
-        Schedule.active == True,
-        Schedule.start_time <= current_time,
-        Schedule.end_time >= current_time,
-        Schedule.days_of_week.any(current_day)
+        Schedule.screen_id == screen.id,
+        Schedule.day == current_day_name,
+        Schedule.start_hour <= current_hour,
+        Schedule.end_hour > current_hour
     ).first()
 
-    playlist_id = screen.current_playlist_id
+    playlist_id = screen.playlist_id
     source = "default"
     schedule_name = None
 

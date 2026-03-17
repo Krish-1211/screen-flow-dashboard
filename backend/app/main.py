@@ -13,10 +13,9 @@ REQUIRED_ENV_VARS = [
     "ADMIN_USERNAME",
     "ADMIN_PASSWORD",
     "CORS_ALLOWED_ORIGINS",
-    "B2_ENDPOINT",
-    "B2_KEY_ID",
-    "B2_APPLICATION_KEY",
-    "B2_BUCKET_NAME",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_BUCKET_NAME",
     "API_BASE_URL",
 ]
 def create_app() -> FastAPI:
@@ -31,10 +30,6 @@ def create_app() -> FastAPI:
             )
 
     app = FastAPI(title="ScreenFlow Dashboard API")
-
-    # Configure B2 CORS on startup
-    from .services.storage import configure_bucket_cors
-    configure_bucket_cors()
 
     # CORS configuration
     cors_allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")

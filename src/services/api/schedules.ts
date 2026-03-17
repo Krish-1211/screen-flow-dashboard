@@ -1,19 +1,17 @@
 import api from '@/lib/axios';
 
 export interface Schedule {
-    id: number;
-    screen_id: number;
-    playlist_id: number;
-    name?: string;
-    start_time: string;
-    end_time: string;
-    days_of_week: number[];
-    active: boolean;
+    id: string;
+    screen_id: string;
+    playlist_id: string;
+    day: string;
+    start_hour: number;
+    end_hour: number;
     created_at: string;
 }
 
 export const schedulesApi = {
-    getAll: async (screenId?: number): Promise<Schedule[]> => {
+    getAll: async (screenId?: string): Promise<Schedule[]> => {
         const url = screenId ? `/schedules/?screen_id=${screenId}` : '/schedules/';
         const response = await api.get(url);
         return response.data;
@@ -22,11 +20,11 @@ export const schedulesApi = {
         const response = await api.post('/schedules/', payload);
         return response.data;
     },
-    update: async (id: number, payload: Partial<Schedule>): Promise<Schedule> => {
+    update: async (id: string, payload: Partial<Schedule>): Promise<Schedule> => {
         const response = await api.put(`/schedules/${id}`, payload);
         return response.data;
     },
-    delete: async (id: number): Promise<void> => {
+    delete: async (id: string): Promise<void> => {
         await api.delete(`/schedules/${id}`);
     }
 };

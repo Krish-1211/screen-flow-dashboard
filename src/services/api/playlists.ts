@@ -5,9 +5,9 @@ const mapPlaylist = (pl: any): Playlist => ({
     ...pl,
     items: pl.items?.map((item: any) => ({
         id: item.id,
-        mediaId: item.media_id,
+        mediaId: String(item.media_id),
         media: item.media ? {
-            id: item.media.id,
+            id: String(item.media.id),
             name: item.media.name,
             type: item.media.type,
             url: item.media.url,
@@ -32,7 +32,7 @@ export const playlistsApi = {
         const response = await api.post('/playlists/', {
             name: payload.name || 'New Playlist',
             items: payload.items?.map((item, index) => ({
-                media_id: Number(item.mediaId),
+                media_id: String(item.mediaId),
                 duration: item.duration,
                 position: item.order ?? index
             })) || []
@@ -44,7 +44,7 @@ export const playlistsApi = {
         if (payload.name !== undefined) updatePayload.name = payload.name;
         if (payload.items !== undefined) {
             updatePayload.items = payload.items.map((item, index) => ({
-                media_id: Number(item.mediaId),
+                media_id: String(item.mediaId),
                 duration: item.duration,
                 position: item.order ?? index
             }));

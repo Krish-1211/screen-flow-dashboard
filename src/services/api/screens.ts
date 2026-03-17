@@ -5,11 +5,11 @@ export const screensApi = {
     getAll: async (): Promise<Screen[]> => {
         const response = await api.get('/screens/');
         return response.data.map((s: any) => ({
-            id: s.id,
+            id: String(s.id),
             name: s.name,
             status: s.status,
             playlistId: s.playlistId,
-            lastPing: s.last_seen,
+            lastPing: s.lastPing,
             device_id: s.device_id
         })) as Screen[];
     },
@@ -17,11 +17,11 @@ export const screensApi = {
         const response = await api.get(`/screens/${id}`);
         const s = response.data;
         return {
-            id: s.id,
+            id: String(s.id),
             name: s.name,
             status: s.status,
             playlistId: s.playlistId,
-            lastPing: s.last_seen,
+            lastPing: s.lastPing,
             device_id: s.device_id
         } as Screen;
     },
@@ -29,27 +29,27 @@ export const screensApi = {
         const response = await api.post('/screens/register', payload);
         const s = response.data;
         return {
-            id: s.id,
+            id: String(s.id),
             name: s.name,
             status: s.status,
             playlistId: s.playlistId,
-            lastPing: s.last_seen,
+            lastPing: s.lastPing,
             device_id: s.device_id
         } as Screen;
     },
     update: async (id: string | number, payload: Partial<Screen>): Promise<Screen> => {
         const updatePayload: any = {};
         if (payload.name !== undefined) updatePayload.name = payload.name;
-        if (payload.playlistId !== undefined) updatePayload.current_playlist_id = payload.playlistId;
+        if (payload.playlistId !== undefined) updatePayload.playlist_id = payload.playlistId;
 
         const response = await api.put(`/screens/${id}`, updatePayload);
         const s = response.data;
         return {
-            id: s.id,
+            id: String(s.id),
             name: s.name,
             status: s.status,
             playlistId: s.playlistId,
-            lastPing: s.last_seen,
+            lastPing: s.lastPing,
             device_id: s.device_id
         } as Screen;
     },
@@ -63,7 +63,7 @@ export const screensApi = {
         const response = await api.get(`/screens/player?device_id=${device_id}`);
         return response.data;
     },
-    bulkUpdate: async (screen_ids: number[], playlist_id: number): Promise<{ updated: number, playlist_id: number }> => {
+    bulkUpdate: async (screen_ids: (string | number)[], playlist_id: string | number): Promise<{ updated: number, playlist_id: string }> => {
         const response = await api.put('/screens/bulk', { screen_ids, playlist_id });
         return response.data;
     }

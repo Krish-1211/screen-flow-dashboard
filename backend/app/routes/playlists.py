@@ -1,3 +1,4 @@
+import uuid
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,14 +7,14 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models.media import Media
-from ..models.playlist import Playlist, PlaylistItem
+from ..models.playlist import Playlist
 from ..auth import get_current_user
 from ..services.audit import write_audit_log
 from ..services.storage import get_presigned_url, get_proxy_url
 
 
 class PlaylistItemPayload(BaseModel):
-    media_id: int
+    media_id: uuid.UUID
     duration: int | None = None
     position: int
 
@@ -32,35 +33,31 @@ router = APIRouter()
 
 
 def serialize_playlist(pl: Playlist, db: Session) -> dict:
-    items = (
-        db.query(PlaylistItem)
-        .filter(PlaylistItem.playlist_id == pl.id)
-        .order_by(PlaylistItem.position.asc())
-        .all()
-    )
+    items = pl.items if isinstance(pl.items, list) else []
     result_items: list[dict] = []
-    for item in items:
-        media = db.query(Media).filter(Media.id == item.media_id).first()
+    
+    # Enrich items with media details
+    for i, item in enumerate(items):
+        media_id = item.get("media_id")
+        media = db.query(Media).filter(Media.id == media_id).first()
         result_items.append(
             {
-                "id": item.id,
-                "media_id": item.media_id,
-                "duration": item.duration,
-                "position": item.position,
+                "id": i, # Dummy ID for backward compatibility with React keys
+                "media_id": str(media_id),
+                "duration": item.get("duration"),
+                "position": item.get("position", i),
                 "media": {
-                    "id": media.id,
-                    "name": media.filename,
-                    "type": "video"
-                    if media.file_type.startswith("video")
-                    else "image",
-                    "url": get_proxy_url(media.filename) if media.filename else None,
+                    "id": str(media.id),
+                    "name": media.name,
+                    "type": "video" if media.type.startswith("video") else "image",
+                    "url": get_proxy_url(media.name) if media.name else None,
                 }
                 if media
                 else None,
             }
         )
     return {
-        "id": pl.id,
+        "id": str(pl.id),
         "name": pl.name,
         "created_at": pl.created_at.isoformat() + "Z",
         "items": result_items,
@@ -74,7 +71,7 @@ def list_playlists(db: Session = Depends(get_db)):
 
 
 @router.get("/{playlist_id}", response_model=dict)
-def get_playlist(playlist_id: int, db: Session = Depends(get_db)):
+def get_playlist(playlist_id: str, db: Session = Depends(get_db)):
     pl = db.query(Playlist).filter(Playlist.id == playlist_id).first()
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
@@ -87,29 +84,22 @@ def create_playlist(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    pl = Playlist(name=payload.name)
+    items_json = [item.dict(exclude_unset=True) for item in payload.items]
+    # Convert media_id UUID to string for JSON storage
+    for item in items_json:
+        item["media_id"] = str(item["media_id"])
+
+    pl = Playlist(name=payload.name, items=items_json)
     db.add(pl)
-    db.flush()
-
-    for item in payload.items:
-        db.add(
-            PlaylistItem(
-                playlist_id=pl.id,
-                media_id=item.media_id,
-                duration=item.duration,
-                position=item.position,
-            )
-        )
-
     db.commit()
     db.refresh(pl)
-    write_audit_log(db, current_user['id'], "create", "playlist", pl.id, meta={"name": pl.name})
+    write_audit_log(db, current_user['id'], "create", "playlist", str(pl.id), meta={"name": pl.name})
     return serialize_playlist(pl, db)
 
 
 @router.put("/{playlist_id}", response_model=dict)
 def update_playlist(
-    playlist_id: int,
+    playlist_id: str,
     payload: PlaylistUpdatePayload,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -122,28 +112,20 @@ def update_playlist(
         pl.name = payload.name
 
     if payload.items is not None:
-        # Clear existing items
-        db.query(PlaylistItem).filter(PlaylistItem.playlist_id == playlist_id).delete()
-        # Add new items
-        for item in payload.items:
-            db.add(
-                PlaylistItem(
-                    playlist_id=playlist_id,
-                    media_id=item.media_id,
-                    duration=item.duration,
-                    position=item.position,
-                )
-            )
+        items_json = [item.dict(exclude_unset=True) for item in payload.items]
+        for item in items_json:
+            item["media_id"] = str(item["media_id"])
+        pl.items = items_json
 
     db.commit()
     db.refresh(pl)
-    write_audit_log(db, current_user['id'], "update", "playlist", pl.id, meta=payload.dict(exclude_unset=True))
+    write_audit_log(db, current_user['id'], "update", "playlist", str(pl.id), meta=payload.dict(exclude_unset=True))
     return serialize_playlist(pl, db)
 
 
 @router.post("/{playlist_id}/items", response_model=dict)
 def add_items(
-    playlist_id: int,
+    playlist_id: str,
     items: List[PlaylistItemPayload],
     db: Session = Depends(get_db),
 ):
@@ -151,16 +133,13 @@ def add_items(
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
 
+    current_items = list(pl.items) if pl.items else []
     for item in items:
-        db.add(
-            PlaylistItem(
-                playlist_id=playlist_id,
-                media_id=item.media_id,
-                duration=item.duration,
-                position=item.position,
-            )
-        )
-
+        item_data = item.dict(exclude_unset=True)
+        item_data["media_id"] = str(item_data["media_id"])
+        current_items.append(item_data)
+    
+    pl.items = current_items
     db.commit()
     db.refresh(pl)
     return serialize_playlist(pl, db)
@@ -168,7 +147,7 @@ def add_items(
 
 @router.delete("/{playlist_id}", status_code=204)
 def delete_playlist(
-    playlist_id: int, 
+    playlist_id: str, 
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):

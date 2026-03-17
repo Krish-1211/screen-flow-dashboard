@@ -1,29 +1,15 @@
 from datetime import datetime
-
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy.orm import relationship
+import uuid
+from sqlalchemy import Column, DateTime, String, text
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from ..database import Base
-
 
 class Playlist(Base):
     __tablename__ = "playlists"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    items = relationship("PlaylistItem", back_populates="playlist", cascade="all, delete-orphan")
-
-
-class PlaylistItem(Base):
-    __tablename__ = "playlist_items"
-
-    id = Column(Integer, primary_key=True, index=True)
-    playlist_id = Column(Integer, ForeignKey("playlists.id", ondelete="CASCADE"))
-    media_id = Column(Integer, ForeignKey("media.id", ondelete="CASCADE"))
-    duration = Column(Integer, nullable=True)
-    position = Column(Integer, nullable=False)
-
-    playlist = relationship("Playlist", back_populates="items")
+    items = Column(JSONB, default=[], nullable=False) # List of media objects
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, server_default=text('now()'), nullable=False)
 
