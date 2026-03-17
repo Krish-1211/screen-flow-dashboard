@@ -50,35 +50,43 @@ async def proxy_media(filename: str):
     from ..services.storage import get_presigned_url
 
     try:
-        # Always use media/ prefix for B2 object key
-        object_key = f"media/{filename}" if not filename.startswith("media/") else filename
+        # Object key in B2 always has media/ prefix
+        object_key = f"media/{filename}"
         url = get_presigned_url(object_key)
         
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Using stream=True for large media files if needed
             response = await client.get(url)
-            
+        
         if response.status_code != 200:
             raise HTTPException(status_code=404, detail="Media not found")
-
-        content_type = response.headers.get(
-            "content-type", "application/octet-stream"
-        )
+            
+        # Detect content type from filename
+        ext = filename.lower().split('.')[-1]
+        content_type_map = {
+            'mp4': 'video/mp4',
+            'mov': 'video/quicktime', 
+            'avi': 'video/x-msvideo',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'webp': 'image/webp',
+        }
+        content_type = content_type_map.get(ext, 'application/octet-stream')
         
         return StreamingResponse(
             iter([response.content]),
             media_type=content_type,
             headers={
                 "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "public, max-age=3600",
-                "Content-Disposition": response.headers.get("content-disposition", ""),
+                "Cache-Control": "public, max-age=86400",
+                "Content-Length": str(len(response.content)),
             }
         )
     except HTTPException:
         raise
     except Exception as e:
         print(f"Proxy error: {e}")
-        raise HTTPException(status_code=404, detail=f"Media not found: {str(e)}")
+        raise HTTPException(status_code=404, detail="Media not found")
 
 
 def sanitise_filename(filename: str) -> str:

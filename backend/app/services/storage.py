@@ -37,8 +37,8 @@ def get_presigned_url(object_key: str, expires_in: int = 86400) -> str:
 def get_proxy_url(filename: str) -> str:
     """Returns the proxy URL for a media file."""
     base_url = os.environ.get("API_BASE_URL", "").rstrip("/")
-    # Strip any leading 'media/' prefix from filename for the public URL
-    clean_filename = filename.replace("media/", "").lstrip("/")
+    # Strip media/ prefix if present since proxy adds it
+    clean_filename = filename.replace("media/", "")
     return f"{base_url}/media/proxy/{clean_filename}"
 
 def delete_file(object_key: str):
