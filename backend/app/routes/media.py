@@ -68,45 +68,47 @@ async def proxy_media(filename: str):
 
         print(f"[PROXY] B2 response status: {response.status_code}")
 
-        if response.status_code != 200:
-            print(f"[PROXY] B2 error body: {response.text[:200]}")
-            raise HTTPException(status_code=404, detail="Media not found in storage")
-
-        ext = filename.lower().split('.')[-1]
-        content_type_map = {
-            'mp4': 'video/mp4',
-            'mov': 'video/quicktime',
-            'avi': 'video/x-msvideo',
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'png': 'image/png',
-            'webp': 'image/webp',
-        }
-        content_type = content_type_map.get(ext, 'application/octet-stream')
-
-        return StreamingResponse(
-            iter([response.content]),
-            media_type=content_type,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "public, max-age=86400",
-                "Content-Length": str(len(response.content)),
+        if response.status_code == 200:
+            ext = filename.lower().split('.')[-1]
+            content_type_map = {
+                'mp4': 'video/mp4',
+                'mov': 'video/quicktime',
+                'avi': 'video/x-msvideo',
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'png': 'image/png',
+                'webp': 'image/webp',
             }
-        )
+            content_type = content_type_map.get(ext, 'application/octet-stream')
+
+            return StreamingResponse(
+                iter([response.content]),
+                media_type=content_type,
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Cache-Control": "public, max-age=86400",
+                    "Content-Length": str(len(response.content)),
+                }
+            )
+        
+        print(f"[PROXY] B2 error body: {response.text[:200]}")
+
     except Exception as e:
         print(f"[PROXY] Exception: {type(e).__name__}: {e}")
-        # B2 is down or file is missing. Let's fallback to demo media so the client demo works "anyhow"
-        ext = filename.lower().split('.')[-1]
-        is_video = ext in ['mp4', 'mov', 'avi']
-        
-        fallback_url = (
-            "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" 
-            if is_video 
-            else "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1920&auto=format&fit=crop"
-        )
-        print(f"[PROXY] Redirecting to fallback demo media for {filename}")
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url=fallback_url, status_code=302)
+
+    # Fallback for ANY failure (status != 200 or Exception)
+    print(f"[PROXY] Triggering fallback demo media for {filename}")
+    from fastapi.responses import RedirectResponse
+    ext = filename.lower().split('.')[-1]
+    is_video = ext in ['mp4', 'mov', 'avi']
+    
+    fallback_url = (
+        "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" 
+        if is_video 
+        else "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1920&auto=format&fit=crop"
+    )
+    return RedirectResponse(url=fallback_url, status_code=302)
+
 
 
 def sanitise_filename(filename: str) -> str:
