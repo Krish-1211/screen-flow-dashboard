@@ -31,6 +31,10 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="ScreenFlow Dashboard API")
 
+    # Configure B2 CORS on startup
+    from .services.storage import configure_bucket_cors
+    configure_bucket_cors()
+
     # CORS configuration
     cors_allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
     if not cors_allowed_origins:

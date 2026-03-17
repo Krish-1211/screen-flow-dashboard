@@ -40,3 +40,31 @@ def delete_file(object_key: str):
         client.delete_object(Bucket=os.environ["B2_BUCKET_NAME"], Key=object_key)
     except Exception:
         pass
+
+def configure_bucket_cors():
+    """Set CORS rules on the B2 bucket to allow browser playback."""
+    try:
+        client = get_b2_client()
+        bucket = os.environ["B2_BUCKET_NAME"]
+        client.put_bucket_cors(
+            Bucket=bucket,
+            CORSConfiguration={
+                'CORSRules': [
+                    {
+                        'AllowedHeaders': ['*'],
+                        'AllowedMethods': ['GET', 'HEAD'],
+                        'AllowedOrigins': [
+                            'https://screenflow-dashboard.onrender.com',
+                            'http://localhost:3000',
+                            'http://localhost:5173',
+                            'http://localhost:8000',
+                        ],
+                        'ExposeHeaders': ['Content-Length', 'Content-Type', 'Range'],
+                        'MaxAgeSeconds': 86400,
+                    }
+                ]
+            }
+        )
+        print(f"CORS configuration updated for bucket: {bucket}")
+    except Exception as e:
+        print(f"CORS configuration warning: {e}")
