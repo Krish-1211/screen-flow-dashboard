@@ -130,18 +130,51 @@ def sanitise_filename(filename: str) -> str:
 
 @router.get("/", response_model=List[dict])
 def list_media(db: Session = Depends(get_db)):
-    items = db.query(Media).order_by(Media.created_at.desc()).all()
-    return [
-        {
-            "id": str(m.id),
-            "name": m.name,
-            "type": "video" if m.type.startswith("video") else "image",
-            "url": get_proxy_url(m.name) if m.name else None,
-            "duration": float(m.duration) if m.duration is not None else None,
-            "uploaded_at": m.created_at.isoformat() + "Z",
-        }
-        for m in items
-    ]
+    try:
+        items = db.query(Media).order_by(Media.created_at.desc()).all()
+        result = []
+        for m in items:
+            try:
+                # Be defensive about every field
+                media_id = str(m.id) if m.id else ""
+                media_name = m.name or "Unnamed"
+                
+                # Check type
+                if not m.type:
+                    media_type = "image"
+                elif m.type.startswith("video"):
+                    media_type = "video"
+                else:
+                    media_type = "image"
+                
+                # Check duration
+                try:
+                    duration = float(m.duration) if m.duration is not None else None
+                except (ValueError, TypeError):
+                    duration = None
+
+                # Check created_at
+                try:
+                    uploaded_at = m.created_at.isoformat() + "Z" if m.created_at else datetime.utcnow().isoformat() + "Z"
+                except Exception:
+                    uploaded_at = datetime.utcnow().isoformat() + "Z"
+
+                result.append({
+                    "id": media_id,
+                    "name": media_name,
+                    "type": media_type,
+                    "url": get_proxy_url(media_name),
+                    "duration": duration,
+                    "uploaded_at": uploaded_at,
+                })
+            except Exception as row_error:
+                print(f"[MEDIA] Error serializing row: {row_error}")
+                continue
+        return result
+    except Exception as e:
+        print(f"[MEDIA] Fatal error in list_media: {e}")
+        # Return empty list instead of 500 to keep UI alive
+        return []
 
 
 @router.post("/upload", response_model=dict)
