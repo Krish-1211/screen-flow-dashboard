@@ -327,8 +327,8 @@ async def add_youtube_media(
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
-@router.patch("/{media_id}", response_model=dict)
-@router.patch("/{media_id}/", response_model=dict, include_in_schema=False)
+@router.patch("/rename/{media_id}", response_model=dict)
+@router.patch("/rename/{media_id}/", response_model=dict, include_in_schema=False)
 def update_media(
     media_id: str,
     payload: UpdateMediaRequest,

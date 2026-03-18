@@ -26,7 +26,7 @@ export const mediaApi = {
         return response.data as Media;
     },
     update: async (id: string, name: string): Promise<Media> => {
-        const response = await api.patch(`/media/${id}`, { name });
+        const response = await api.patch(`/media/rename/${id}`, { name });
         return response.data as Media;
     },
     delete: async (id: string): Promise<void> => {
