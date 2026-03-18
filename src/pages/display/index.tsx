@@ -31,9 +31,13 @@ export default function DisplayPlayerPage() {
   const preloadMedia = useCallback(async (pl: Playlist) => {
     console.log("Preloading media for offline use...");
     const fetchPromises = pl.items.map(item => {
-      if (item.media?.url) {
-        return fetch(item.media.url, { mode: 'no-cors' })
-          .catch(err => console.error("Failed to preload:", item.media?.url, err));
+      if (item.media?.url && item.media.type !== 'youtube') {
+        return fetch(item.media.url)
+          .then(res => {
+            if (!res.ok) throw new Error(`Status ${res.status}`);
+            return res;
+          })
+          .catch(err => console.error(`Failed to preload ${item.media?.name}:`, err.message));
       }
       return Promise.resolve();
     });
@@ -144,8 +148,9 @@ export default function DisplayPlayerPage() {
     };
   }, [currentIndex, playlist, advanceMedia]);
 
-  const handleMediaError = () => {
-    console.error("Media failed to load");
+  const handleMediaError = (e: any) => {
+    const errorMsg = e?.target?.error ? `Error Code: ${e.target.error.code} - ${e.target.error.message}` : "General playback error";
+    console.error(`Playback failed for ${currentItem?.media?.name}:`, errorMsg);
     setMediaError(true);
     setTimeout(advanceMedia, 5000); // skip to next after 5s
   };

@@ -68,7 +68,13 @@ async def proxy_media(filename: str, request: Request):
         headers["Range"] = range_header
 
     try:
+        print(f"[PROXY] Request for {filename} -> object_key: {object_key}")
         url = get_presigned_url(object_key)
+        if not url:
+            print(f"[PROXY] Failed to get signed URL for {object_key}")
+            return Response(content="File not found in storage", status_code=404)
+        
+        print(f"[PROXY] Fetching from Supabase: {url[:100]}...")
         
         # We use an async client to stream the response from Supabase
         # directly to the client. This supports large files and seeking.
@@ -112,22 +118,11 @@ async def proxy_media(filename: str, request: Request):
         # If we got here, Supabase returned an error status
         await client.aclose()
         print(f"[PROXY] Supabase returned status {response.status_code} for {object_key}")
+        return Response(content=f"Storage error: {response.status_code}", status_code=response.status_code)
 
     except Exception as e:
         print(f"[PROXY] Exception: {type(e).__name__}: {e}")
-
-    # Fallback for ANY failure
-    print(f"[PROXY] Triggering fallback demo media for {filename}")
-    from fastapi.responses import RedirectResponse
-    ext = filename.lower().split('.')[-1]
-    is_video = ext in ['mp4', 'mov', 'avi']
-    
-    fallback_url = (
-        "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" 
-        if is_video 
-        else "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1920&auto=format&fit=crop"
-    )
-    return RedirectResponse(url=fallback_url, status_code=302)
+        return Response(content=f"Internal proxy error: {str(e)}", status_code=500)
 
 
 
@@ -162,11 +157,13 @@ def list_media(db: Session = Depends(get_db)):
                 # Robust YouTube check (by type OR by URL pattern)
                 is_youtube = m.type == "youtube" or (m.url and ("youtube.com" in m.url or "youtu.be" in m.url))
                 
+                # Check for video markers in type, url, or name
+                has_video_ext = any((x and x.lower().endswith((".mp4", ".mov", ".avi"))) for x in [m.url, m.name])
+                is_video = (m.type and m.type.startswith("video")) or has_video_ext
+                
                 if is_youtube:
                     media_type = "youtube"
-                elif not m.type:
-                    media_type = "image"
-                elif m.type.startswith("video") or (m.url and m.url.endswith((".mp4", ".mov", ".avi"))):
+                elif is_video:
                     media_type = "video"
                 else:
                     media_type = "image"
