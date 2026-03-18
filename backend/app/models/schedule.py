@@ -11,6 +11,7 @@ class Schedule(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     screen_id = Column(UUID(as_uuid=True), nullable=False)
     playlist_id = Column(UUID(as_uuid=True), nullable=False)
+    name = Column(String, nullable=True)
     day = Column(String, nullable=False) # e.g. "Monday"
     start_hour = Column(Integer, nullable=False) # int4 in Supabase
     end_hour = Column(Integer, nullable=False)   # int4 in Supabase

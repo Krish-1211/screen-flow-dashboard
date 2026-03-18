@@ -4,6 +4,7 @@ export interface Schedule {
     id: string;
     screen_id: string;
     playlist_id: string;
+    name?: string;
     day: string;
     start_hour: number;
     end_hour: number;

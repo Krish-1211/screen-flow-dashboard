@@ -36,8 +36,8 @@ export default function SchedulesPage() {
     playlist_id: "", 
     name: "",
     days_of_week: [0, 1, 2, 3, 4], 
-    start_time: "09:00", 
-    end_time: "17:00",
+    start_hour: 9, 
+    end_hour: 17,
     active: true
   });
 
@@ -67,8 +67,8 @@ export default function SchedulesPage() {
         playlist_id: "", 
         name: "",
         days_of_week: [0, 1, 2, 3, 4], 
-        start_time: "09:00", 
-        end_time: "17:00",
+        start_hour: 9, 
+        end_hour: 17,
         active: true
       });
     },
@@ -85,17 +85,26 @@ export default function SchedulesPage() {
     }
   });
 
-  const addSchedule = () => {
+  const addSchedule = async () => {
     if (!form.screen_id || !form.playlist_id) return;
-    createMutation.mutate({
-      screen_id: parseInt(form.screen_id),
-      playlist_id: parseInt(form.playlist_id),
-      name: form.name,
-      days_of_week: form.days_of_week,
-      start_time: form.start_time,
-      end_time: form.end_time,
-      active: form.active
-    });
+    
+    // We send multiple requests, one for each day
+    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    
+    for (const dayIndex of form.days_of_week) {
+        try {
+            await createMutation.mutateAsync({
+                screen_id: form.screen_id,
+                playlist_id: form.playlist_id,
+                name: form.name || undefined,
+                day: dayNames[dayIndex],
+                start_hour: form.start_hour,
+                end_hour: form.end_hour,
+            });
+        } catch (e) {
+            console.error(`Failed to create schedule for day ${dayIndex}`, e);
+        }
+    }
   };
 
   const toggleDay = (dayIndex: number) => {
@@ -108,12 +117,13 @@ export default function SchedulesPage() {
   };
 
   const getBlocksForDayAndHour = (dayIndex: number, hour: number) => {
+    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    const dayName = dayNames[dayIndex];
+    
     return schedules.filter(
       (s: any) => {
-          if (!s.days_of_week.includes(dayIndex)) return false;
-          const startH = parseInt(s.start_time.split(':')[0]);
-          const endH = parseInt(s.end_time.split(':')[0]);
-          return hour >= startH && hour < endH;
+          if (s.day !== dayName) return false;
+          return hour >= s.start_hour && hour < s.end_hour;
       }
     );
   };
@@ -190,12 +200,12 @@ export default function SchedulesPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Start Time</Label>
-                      <Input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} className="bg-secondary" />
+                      <Label>Start Hour (0-23)</Label>
+                      <Input type="number" min={0} max={23} value={form.start_hour} onChange={(e) => setForm({ ...form, start_hour: parseInt(e.target.value) })} className="bg-secondary" />
                     </div>
                     <div className="space-y-2">
-                      <Label>End Time</Label>
-                      <Input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} className="bg-secondary" />
+                      <Label>End Hour (1-24)</Label>
+                      <Input type="number" min={1} max={24} value={form.end_hour} onChange={(e) => setForm({ ...form, end_hour: parseInt(e.target.value) })} className="bg-secondary" />
                     </div>
                   </div>
                   <Button onClick={addSchedule} className="w-full" disabled={createMutation.isPending || !form.screen_id || !form.playlist_id}>
@@ -229,14 +239,14 @@ export default function SchedulesPage() {
                     <div key={h} className="border-l border-border h-12 relative z-0">
                       {blocks.map((b: any) => {
                         const playlistName = playlists.find((p: any) => p.id === b.playlist_id)?.name || "Unknown";
-                        const startH = parseInt(b.start_time.split(':')[0]);
-                        const endH = parseInt(b.end_time.split(':')[0]);
+                        const startH = b.start_hour;
+                        const endH = b.end_hour;
                         return h === startH && (
                           <div
                             key={b.id}
                             className="absolute top-1 bottom-1 left-0 bg-primary/20 border border-primary/30 rounded text-[9px] text-primary px-1.5 flex items-center overflow-hidden z-10 hover:bg-primary/30 hover:border-primary/50 transition-colors"
                             style={{ width: `calc(${(endH - startH) * 100}% + ${(endH - startH - 1)}px)` }}
-                            title={`${b.name || playlistName} (${b.start_time} - ${b.end_time})`}
+                            title={`${b.name || playlistName} (${startH}:00 - ${endH}:00)`}
                           >
                             <span className="truncate whitespace-nowrap font-medium">{b.name || playlistName}</span>
                           </div>
@@ -281,16 +291,9 @@ export default function SchedulesPage() {
                           <span>{playlistName}</span>
                       </div>
                       <span className="text-border">•</span>
-                      <div className="flex items-center gap-1.5">
-                          <span>{s.start_time.slice(0, 5)} – {s.end_time.slice(0, 5)}</span>
-                      </div>
-                      <span className="text-border">•</span>
-                      <div className="flex items-center gap-0.5">
-                          {days.map((d, i) => (
-                              <span key={d} className={cn("w-3 text-center", s.days_of_week.includes(i) ? "text-primary font-bold" : "text-muted-foreground/30")}>
-                                  {d[0]}
-                              </span>
-                          ))}
+                      <div className="flex items-center gap-1.5 font-mono">
+                          <span>{String(s.start_hour).padStart(2, '0')}:00 – {String(s.end_hour).padStart(2, '0')}:00</span>
+                          <span className="text-primary font-bold ml-1">{s.day}</span>
                       </div>
                     </div>
                   </div>

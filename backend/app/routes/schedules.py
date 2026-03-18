@@ -17,6 +17,7 @@ router = APIRouter()
 class ScheduleBase(BaseModel):
     screen_id: uuid.UUID
     playlist_id: uuid.UUID
+    name: Optional[str] = None
     day: str # Monday, Tuesday, etc.
     start_hour: int
     end_hour: int
@@ -28,6 +29,7 @@ class ScheduleResponse(BaseModel):
     id: uuid.UUID
     screen_id: uuid.UUID
     playlist_id: uuid.UUID
+    name: Optional[str] = None
     day: str
     start_hour: int
     end_hour: int
@@ -79,6 +81,7 @@ def create_schedule(
     db_schedule = Schedule(
         screen_id=payload.screen_id,
         playlist_id=payload.playlist_id,
+        name=payload.name,
         day=payload.day,
         start_hour=payload.start_hour,
         end_hour=payload.end_hour
@@ -109,6 +112,7 @@ def update_schedule(
 
     db_schedule.screen_id = payload.screen_id
     db_schedule.playlist_id = payload.playlist_id
+    db_schedule.name = payload.name
     db_schedule.day = payload.day
     db_schedule.start_hour = payload.start_hour
     db_schedule.end_hour = payload.end_hour
