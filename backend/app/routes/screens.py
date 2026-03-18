@@ -1,12 +1,4 @@
-# RENDER FREE TIER NOTE:
-# This service may spin down after 15 minutes of inactivity on Render's
-# free plan. To prevent false "screen offline" alerts, configure a free
-# uptime monitoring service (e.g. UptimeRobot at uptimerobot.com) to
-# send an HTTP GET request to /health every 5 minutes.
-# The /health endpoint is defined in main.py and requires no auth.
-
-import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import random
 from typing import List
 
@@ -59,23 +51,53 @@ public_router = APIRouter()
 
 
 def serialize_screen(screen: Screen) -> dict:
-    status = screen.status
-    if screen.last_ping:
-        is_recent = (datetime.utcnow() - screen.last_ping) < timedelta(seconds=60)
-        if is_recent:
-            status = "online"
-        elif status == "online":
-            status = "offline"
+    try:
+        status = screen.status
+        uploaded_at = ""
+        last_ping_str = None
 
-    return {
-        "id": str(screen.id),
-        "name": screen.name,
-        "device_id": screen.device_id,
-        "status": status,
-        "lastPing": screen.last_ping.isoformat() + "Z" if screen.last_ping else None,
-        "playlistId": str(screen.playlist_id) if screen.playlist_id else None,
-        "created_at": screen.created_at.isoformat() + "Z"
-    }
+        if screen.last_ping:
+            # DB may store timezone-aware or naive. Ensure we compare aware to aware.
+            last_ping = screen.last_ping
+            if last_ping.tzinfo is None:
+                 last_ping = last_ping.replace(tzinfo=timezone.utc)
+                 
+            now = datetime.now(timezone.utc)
+            is_recent = (now - last_ping) < timedelta(seconds=60)
+            if is_recent:
+                status = "online"
+            elif status == "online":
+                status = "offline"
+            
+            # Format reliably for ISO
+            last_ping_str = last_ping.isoformat()
+            if not last_ping_str.endswith('Z') and '+' not in last_ping_str:
+                last_ping_str += 'Z'
+
+        created_at_str = ""
+        if screen.created_at:
+            created_at_str = screen.created_at.isoformat()
+            if not created_at_str.endswith('Z') and '+' not in created_at_str:
+                created_at_str += 'Z'
+
+        return {
+            "id": str(screen.id) if screen.id else "",
+            "name": screen.name or "Unnamed",
+            "device_id": screen.device_id or "",
+            "status": status or "offline",
+            "lastPing": last_ping_str,
+            "playlistId": str(screen.playlist_id) if screen.playlist_id else None,
+            "created_at": created_at_str
+        }
+    except Exception as e:
+        print(f"[SCREEN] Serialization error: {e}")
+        # Return a minimal safe dictionary instead of crashing
+        return {
+            "id": str(screen.id) if screen.id else "",
+            "name": "Error Loading",
+            "status": "error",
+            "id_error": str(e)
+        }
 
 
 @router.get("/", response_model=List[dict])
@@ -146,11 +168,12 @@ async def heartbeat(
     if not screen:
         raise HTTPException(status_code=404, detail="Screen not registered")
     
-    screen.last_ping = datetime.utcnow()
+    now = datetime.now(timezone.utc)
+    screen.last_ping = now
     screen.status = "online"
     
     # Check for other screens that went offline
-    stale_threshold = datetime.utcnow() - timedelta(seconds=HEARTBEAT_TIMEOUT_SECONDS)
+    stale_threshold = now - timedelta(seconds=HEARTBEAT_TIMEOUT_SECONDS)
     stale_screens = db.query(Screen).filter(
         Screen.last_ping < stale_threshold,
         Screen.status != "offline"
@@ -191,7 +214,7 @@ async def get_player_config(device_id: str, db: Session = Depends(get_db)):
 
 @router.put("/{screen_id}", response_model=dict)
 def update_screen(
-    screen_id: int,
+    screen_id: str,
     payload: ScreenUpdatePayload,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -209,7 +232,7 @@ def update_screen(
     if payload.status is not None:
         screen.status = payload.status
         if payload.status == "offline":
-            screen.last_ping = datetime.utcnow() - timedelta(seconds=120)
+            screen.last_ping = datetime.now(timezone.utc) - timedelta(seconds=120)
 
     db.commit()
     db.refresh(screen)
@@ -272,7 +295,7 @@ def get_screen_playlist(screen_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Screen not found")
 
     # Check for active schedule
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     current_hour = now.hour
     current_day_name = now.strftime("%A") # Monday, Tuesday, etc.
     

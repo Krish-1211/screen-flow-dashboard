@@ -33,35 +33,54 @@ router = APIRouter()
 
 
 def serialize_playlist(pl: Playlist, db: Session) -> dict:
-    items = pl.items if isinstance(pl.items, list) else []
-    result_items: list[dict] = []
-    
-    # Enrich items with media details
-    for i, item in enumerate(items):
-        media_id = item.get("media_id")
-        media = db.query(Media).filter(Media.id == media_id).first()
-        result_items.append(
-            {
-                "id": i, # Dummy ID for backward compatibility with React keys
-                "media_id": str(media_id),
-                "duration": item.get("duration"),
-                "position": item.get("position", i),
-                "media": {
-                    "id": str(media.id),
-                    "name": media.name,
-                    "type": "video" if media.type.startswith("video") else "image",
-                    "url": get_proxy_url(media.name) if media.name else None,
-                }
-                if media
-                else None,
-            }
-        )
-    return {
-        "id": str(pl.id),
-        "name": pl.name,
-        "created_at": pl.created_at.isoformat() + "Z",
-        "items": result_items,
-    }
+    try:
+        items = pl.items if isinstance(pl.items, list) else []
+        result_items: list[dict] = []
+        
+        # Enrich items with media details
+        for i, item in enumerate(items):
+            try:
+                media_id = item.get("media_id")
+                media = db.query(Media).filter(Media.id == media_id).first()
+                result_items.append(
+                    {
+                        "id": i, # Dummy ID for backward compatibility with React keys
+                        "media_id": str(media_id) if media_id else None,
+                        "duration": item.get("duration"),
+                        "position": item.get("position", i),
+                        "media": {
+                            "id": str(media.id) if media and media.id else "",
+                            "name": media.name if media else "Deleted Media",
+                            "type": "video" if media and media.type and media.type.startswith("video") else "image",
+                            "url": get_proxy_url(media.name) if media and media.name else None,
+                        }
+                        if media
+                        else None,
+                    }
+                )
+            except Exception as item_error:
+                print(f"[PLAYLIST] Error enriching item {i}: {item_error}")
+                continue
+
+        created_at_str = ""
+        if pl.created_at:
+            created_at_str = pl.created_at.isoformat()
+            if not created_at_str.endswith('Z') and '+' not in created_at_str:
+                created_at_str += 'Z'
+
+        return {
+            "id": str(pl.id) if pl.id else "",
+            "name": pl.name or "Unnamed Playlist",
+            "created_at": created_at_str,
+            "items": result_items,
+        }
+    except Exception as e:
+        print(f"[PLAYLIST] Serialization error for {pl.id if pl else 'unknown'}: {e}")
+        return {
+            "id": str(pl.id) if pl and pl.id else "",
+            "name": "Error Loading Playlist",
+            "items": []
+        }
 
 
 @router.get("/", response_model=List[dict])
