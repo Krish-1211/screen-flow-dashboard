@@ -159,12 +159,14 @@ def list_media(db: Session = Depends(get_db)):
                 media_id = str(m.id) if m.id else ""
                 media_name = m.name or "Unnamed"
                 
-                # Check type
-                if not m.type:
-                    media_type = "image"
-                elif m.type == "youtube":
+                # Robust YouTube check (by type OR by URL pattern)
+                is_youtube = m.type == "youtube" or (m.url and ("youtube.com" in m.url or "youtu.be" in m.url))
+                
+                if is_youtube:
                     media_type = "youtube"
-                elif m.type.startswith("video"):
+                elif not m.type:
+                    media_type = "image"
+                elif m.type.startswith("video") or (m.url and m.url.endswith((".mp4", ".mov", ".avi"))):
                     media_type = "video"
                 else:
                     media_type = "image"
@@ -185,7 +187,7 @@ def list_media(db: Session = Depends(get_db)):
                     "id": media_id,
                     "name": media_name,
                     "type": media_type,
-                    "url": m.url if media_type == "youtube" else get_proxy_url(media_name),
+                    "url": m.url if media_type == "youtube" else get_proxy_url(m.name),
                     "duration": duration,
                     "uploaded_at": uploaded_at,
                 })
@@ -345,11 +347,13 @@ def update_media(
     
     write_audit_log(db, current_user['id'], "update", "media", str(media_id), meta={"name": media.name})
     
+    is_youtube = media.type == "youtube" or (media.url and ("youtube.com" in media.url or "youtu.be" in media.url))
+    
     return {
         "id": str(media.id),
         "name": media.name,
-        "type": media.type,
-        "url": media.url if media.type == "youtube" else get_proxy_url(media.name),
+        "type": "youtube" if is_youtube else media.type,
+        "url": media.url if is_youtube else get_proxy_url(media.name),
         "duration": float(media.duration) if media.duration else None,
     }
 
@@ -364,8 +368,11 @@ def delete_media(
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
 
+    # Robust YouTube check
+    is_youtube = media.type == "youtube" or (media.url and ("youtube.com" in media.url or "youtu.be" in media.url))
+
     # Delete from Supabase (only if it's not a youtube embed)
-    if media.type != "youtube":
+    if not is_youtube:
         storage.delete_file(media.name)
 
     db.delete(media)
