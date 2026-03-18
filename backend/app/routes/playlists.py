@@ -51,8 +51,8 @@ def serialize_playlist(pl: Playlist, db: Session) -> dict:
                         "media": {
                             "id": str(media.id) if media and media.id else "",
                             "name": media.name if media else "Deleted Media",
-                            "type": "video" if media and media.type and media.type.startswith("video") else "image",
-                            "url": get_proxy_url(media.name) if media and media.name else None,
+                            "type": "youtube" if media and media.type == "youtube" else ("video" if media and media.type and media.type.startswith("video") else "image"),
+                            "url": media.url if media and media.type == "youtube" else (get_proxy_url(media.name) if media and media.name else None),
                         }
                         if media
                         else None,
