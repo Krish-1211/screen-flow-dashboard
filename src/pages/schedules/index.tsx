@@ -14,6 +14,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -209,6 +210,12 @@ export default function SchedulesPage() {
               <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>{editingGroup ? "Edit Schedule" : "New Schedule"}</DialogTitle>
+                  <DialogDescription>
+                    {editingGroup 
+                      ? "Change the timing or playlist for this schedule group." 
+                      : "Create a new recurring schedule for your screen."
+                    }
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 pt-2">
                   <div className="space-y-2">

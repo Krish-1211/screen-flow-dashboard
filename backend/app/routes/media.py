@@ -272,63 +272,69 @@ async def add_youtube_media(
 ):
     url = payload.url
     
-    # Use yt-dlp to get video info
+    # Use yt-dlp to get video info in JSON format for robustness
     try:
-        # Get info first
         cmd_info = [
             "yt-dlp",
-            "--print", "%(title)s|%(ext)s|%(duration)s",
+            "-j", # Output JSON
             "--no-playlist",
             url
         ]
+        print(f"[YOUTUBE] Getting info for {url}...")
         result = subprocess.run(cmd_info, capture_output=True, text=True, check=True)
-        parts = result.stdout.strip().split("|")
-        if len(parts) < 3:
-            raise HTTPException(status_code=400, detail="Could not retrieve video info")
+        info = json.loads(result.stdout)
         
-        title, ext, duration_str = parts
-        duration = float(duration_str) if duration_str else None
+        title = info.get("title", "YouTube Video")
+        duration = info.get("duration")
+        ext = info.get("ext", "mp4")
         
+        print(f"[YOUTUBE] Found: {title} ({duration}s)")
+
         # Download to a temporary location
         ts = int(datetime.utcnow().timestamp())
         base_name = f"{ts}_yt"
         
         with tempfile.TemporaryDirectory() as tmpdir:
+            # We try to get the best single-file MP4 if possible to avoid merge dependency
+            # Fallback to best if necessary
             output_template = os.path.join(tmpdir, f"{base_name}.%(ext)s")
             
+            print(f"[YOUTUBE] Starting download for {url}...")
             subprocess.run([
                 "yt-dlp",
-                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "-f", "best[ext=mp4]/best",
                 "-o", output_template,
                 "--no-playlist",
                 url
-            ], check=True)
+            ], check=True, capture_output=True)
             
             # Find the file in tmpdir
             downloaded_files = list(Path(tmpdir).glob(f"{base_name}.*"))
             if not downloaded_files:
-                raise HTTPException(status_code=500, detail="Download failed")
+                raise HTTPException(status_code=500, detail="Download failed: No file found after download")
             
             actual_file = downloaded_files[0]
-            filename = actual_file.name
-            content_type = "video/mp4" 
+            filename = f"{ts}_{sanitise_filename(actual_file.name)}" # Ensure unique name
+            content_type = "video/mp4" if filename.lower().endswith(".mp4") else "video/webm"
             
             # Upload to Supabase
             object_key = f"media/{filename}"
+            print(f"[YOUTUBE] Uploading to Supabase as {object_key}...")
             stored_key = storage.upload_file(str(actual_file), object_key, content_type)
             
             media = Media(
                 name=stored_key,
                 type=content_type,
-                url="", # No longer storing static URL in DB
+                url="", 
                 duration=int(duration) if duration else None,
             )
             db.add(media)
             db.commit()
             db.refresh(media)
             
-            write_audit_log(db, current_user['id'], "youtube_download", "media", str(media.id), meta={"url": url, "name": media.name})
+            write_audit_log(db, current_user['id'], "youtube_download", "media", str(media.id), meta={"url": url, "name": media.name, "title": title})
             
+            print(f"[YOUTUBE] Successfully added: {media.name}")
             return {
                 "id": str(media.id),
                 "name": media.name,
@@ -338,8 +344,13 @@ async def add_youtube_media(
             }
         
     except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=400, detail=f"yt-dlp error: {e.stderr}")
+        error_detail = e.stderr or e.stdout or str(e)
+        print(f"[YOUTUBE] yt-dlp Error: {error_detail}")
+        raise HTTPException(status_code=400, detail=f"yt-dlp error: {error_detail[:200]}")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[YOUTUBE] Unexpected Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
