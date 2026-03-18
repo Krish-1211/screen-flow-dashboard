@@ -274,51 +274,47 @@ async def add_youtube_media(
 ):
     url = payload.url
     
-    # Skip download and just save metadata & embed URL
+    # Completely skip server-side processing to ensure absolute reliability
     try:
-        # We'll still try to get the title/duration using yt-dlp if possible,
-        # but if it fails, we'll just use a default title and no duration.
+        # Default metadata
         title = "YouTube Video"
         duration = None
         
-        try:
-            cmd_info = ["python3", "-m", "yt_dlp", "--no-playlist", "--no-check-certificates", "-j", url]
-            result_info = subprocess.run(cmd_info, capture_output=True, text=True, check=True)
-            info = json.loads(result_info.stdout)
-            title = info.get("title", title)
-            duration = info.get("duration")
-        except Exception as e:
-            print(f"[YOUTUBE] Info fetch failed, using defaults: {e}")
-
-        # Extract video ID for storage/identification
+        # Try a quick name extraction from URL if possible
+        # e.g. https://www.youtube.com/watch?v=XXXX -> YouTube: XXXX
         video_id = ""
         if "v=" in url:
             video_id = url.split("v=")[1].split("&")[0]
+            title = f"YouTube: {video_id}"
         elif "youtu.be/" in url:
             video_id = url.split("youtu.be/")[1].split("?")[0]
-        else:
-            video_id = url # Fallback to whole URL if we can't parse it easily
+            title = f"YouTube: {video_id}"
             
         media = Media(
             name=title,
             type="youtube",
             url=url, 
-            duration=int(duration) if duration else None,
+            duration=None, # Duration doesn't matter much for infinite youtube loop
         )
         db.add(media)
         db.commit()
         db.refresh(media)
         
-        write_audit_log(db, current_user['id'], "youtube_add", "media", str(media.id), meta={"url": url, "name": media.name, "title": title})
-        print(f"[YOUTUBE] Successfully added as embed: {media.name}")
+        write_audit_log(db, current_user['id'], "youtube_add", "media", str(media.id), meta={"url": url, "name": media.name})
+        print(f"[YOUTUBE] Successfully added embed (no-fetch mode): {media.name}")
         
         return {
             "id": str(media.id),
             "name": media.name,
             "type": "youtube",
             "url": media.url,
-            "duration": media.duration,
+            "duration": None,
         }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[YOUTUBE] Error adding: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         import traceback
         traceback.print_exc()
