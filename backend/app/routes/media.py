@@ -1,9 +1,8 @@
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import List
-
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Body, Request
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Body, Request, Form
+from typing import List, Optional
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import subprocess
@@ -31,6 +30,11 @@ for d in (VIDEOS_DIR, IMAGES_DIR):
 
 class YouTubePayload(BaseModel):
     url: str
+    name: Optional[str] = None
+
+
+class UpdateMediaRequest(BaseModel):
+    name: str
 
 
 router = APIRouter()
@@ -198,6 +202,7 @@ def list_media(db: Session = Depends(get_db)):
 @router.post("/upload", response_model=dict)
 async def upload_media(
     file: UploadFile = File(...),
+    name: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -235,7 +240,7 @@ async def upload_media(
         print(f"[MEDIA] Upload successful, stored key: {object_key}")
 
         media = Media(
-            name=object_key,
+            name=name if name else object_key,
             type=content_type,
             url="", # No longer storing static URL in DB
             duration=None,
@@ -291,7 +296,7 @@ async def add_youtube_media(
             title = f"YouTube: {video_id}"
             
         media = Media(
-            name=title,
+            name=payload.name if payload.name else title,
             type="youtube",
             url=url, 
             duration=None, # Duration doesn't matter much for infinite youtube loop
@@ -320,6 +325,32 @@ async def add_youtube_media(
         traceback.print_exc()
         print(f"[YOUTUBE] Fatal error adding embed: {e}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
+
+@router.put("/{media_id}", response_model=dict)
+def update_media(
+    media_id: str,
+    payload: UpdateMediaRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    media = db.query(Media).filter(Media.id == media_id).first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media not found")
+    
+    media.name = payload.name
+    db.commit()
+    db.refresh(media)
+    
+    write_audit_log(db, current_user['id'], "update", "media", str(media_id), meta={"name": media.name})
+    
+    return {
+        "id": str(media.id),
+        "name": media.name,
+        "type": media.type,
+        "url": media.url if media.type == "youtube" else get_proxy_url(media.name),
+        "duration": float(media.duration) if media.duration else None,
+    }
 
 
 @router.delete("/{media_id}", status_code=204)
