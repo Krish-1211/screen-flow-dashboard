@@ -75,10 +75,10 @@ export default function DisplayPlayerPage() {
     };
   }, [deviceId]);
 
-  const loadPlaylist = useCallback(async () => {
+  const loadPlaylist = useCallback(async (isInitial = false) => {
     if (!deviceId) return;
     try {
-      setLoading(true);
+      if (isInitial && !playlist) setLoading(true);
       // Fetch the full screen + playlist config using device_id
       const data = await screensApi.getPlayerConfig(deviceId);
       
@@ -101,15 +101,15 @@ export default function DisplayPlayerPage() {
     } finally {
       setLoading(false);
     }
-  }, [deviceId, preloadMedia]);
+  }, [deviceId, preloadMedia, playlist]);
 
   useEffect(() => {
     if (!deviceId) {
       setLoading(false);
       return;
     }
-    loadPlaylist();
-    const pollInterval = setInterval(loadPlaylist, 30000);
+    loadPlaylist(true);
+    const pollInterval = setInterval(() => loadPlaylist(false), 30000);
 
     const handleOnline = () => setConnected(true);
     const handleOffline = () => setConnected(false);
