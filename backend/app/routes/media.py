@@ -3,8 +3,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Body
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Body, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import subprocess
 import json
@@ -38,15 +38,16 @@ public_router = APIRouter()
 
 
 @public_router.get("/proxy/{filename:path}", include_in_schema=False)
-async def proxy_media(filename: str):
+async def proxy_media(filename: str, request: Request):
     """
     Public endpoint that proxies media files from Supabase.
     No auth required — used by the player to fetch media.
     This solves CORS issues since the browser talks to our
     own API instead of Supabase directly.
+    Supports HTTP Range requests for video seeking.
     """
     import httpx
-    from fastapi.responses import StreamingResponse
+    # StreamingResponse already imported above
     from ..services.storage import get_presigned_url
 
     # Strip any leading media/ prefix to avoid double prefix
@@ -56,19 +57,22 @@ async def proxy_media(filename: str):
     else:
         object_key = f"media/{clean_filename}"
 
-    print(f"[PROXY] Requested filename: {filename}")
-    print(f"[PROXY] Using object key: {object_key}")
+    # Get range header from client request
+    range_header = request.headers.get("Range")
+    headers = {}
+    if range_header:
+        headers["Range"] = range_header
 
     try:
         url = get_presigned_url(object_key)
-        print(f"[PROXY] Pre-signed URL generated: {url[:80]}...")
+        
+        # We use an async client to stream the response from Supabase
+        # directly to the client. This supports large files and seeking.
+        client = httpx.AsyncClient(timeout=60.0)
+        req = client.build_request("GET", url, headers=headers)
+        response = await client.send(req, stream=True)
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url)
-
-        print(f"[PROXY] Supabase response status: {response.status_code}")
-
-        if response.status_code == 200:
+        if response.status_code in (200, 206):
             ext = filename.lower().split('.')[-1]
             content_type_map = {
                 'mp4': 'video/mp4',
@@ -79,24 +83,36 @@ async def proxy_media(filename: str):
                 'png': 'image/png',
                 'webp': 'image/webp',
             }
-            content_type = content_type_map.get(ext, 'application/octet-stream')
+            content_type = response.headers.get("Content-Type") or content_type_map.get(ext, 'application/octet-stream')
+
+            # Prepare client headers
+            client_headers = {
+                "Access-Control-Allow-Origin": "*",
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=86400",
+            }
+            
+            # Pass through partial content headers
+            for h in ["Content-Range", "Content-Length", "Content-Type"]:
+                if h in response.headers:
+                    client_headers[h] = response.headers[h]
 
             return StreamingResponse(
-                iter([response.content]),
+                response.aiter_bytes(),
+                status_code=response.status_code,
                 media_type=content_type,
-                headers={
-                    "Access-Control-Allow-Origin": "*",
-                    "Cache-Control": "public, max-age=86400",
-                    "Content-Length": str(len(response.content)),
-                }
+                headers=client_headers,
+                background=client.aclose, # Ensure client closes after stream ends
             )
         
-        print(f"[PROXY] Supabase error body: {response.text[:200]}")
+        # If we got here, Supabase returned an error status
+        await client.aclose()
+        print(f"[PROXY] Supabase returned status {response.status_code} for {object_key}")
 
     except Exception as e:
         print(f"[PROXY] Exception: {type(e).__name__}: {e}")
 
-    # Fallback for ANY failure (status != 200 or Exception)
+    # Fallback for ANY failure
     print(f"[PROXY] Triggering fallback demo media for {filename}")
     from fastapi.responses import RedirectResponse
     ext = filename.lower().split('.')[-1]
