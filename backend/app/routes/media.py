@@ -158,6 +158,8 @@ def list_media(db: Session = Depends(get_db)):
                 # Check type
                 if not m.type:
                     media_type = "image"
+                elif m.type == "youtube":
+                    media_type = "youtube"
                 elif m.type.startswith("video"):
                     media_type = "video"
                 else:
@@ -179,7 +181,7 @@ def list_media(db: Session = Depends(get_db)):
                     "id": media_id,
                     "name": media_name,
                     "type": media_type,
-                    "url": get_proxy_url(media_name),
+                    "url": m.url if media_type == "youtube" else get_proxy_url(media_name),
                     "duration": duration,
                     "uploaded_at": uploaded_at,
                 })
@@ -272,76 +274,55 @@ async def add_youtube_media(
 ):
     url = payload.url
     
-    # Try to fetch info first using yt-dlp Python module via subprocess
+    # Skip download and just save metadata & embed URL
     try:
-        common_args = ["python3", "-m", "yt_dlp", "--no-playlist", "--no-check-certificates"]
+        # We'll still try to get the title/duration using yt-dlp if possible,
+        # but if it fails, we'll just use a default title and no duration.
+        title = "YouTube Video"
+        duration = None
         
-        # Get info JSON
-        cmd_info = common_args + ["-j", url]
-        print(f"[YOUTUBE] Fetching info for {url}...")
-        result_info = subprocess.run(cmd_info, capture_output=True, text=True, check=True)
-        info = json.loads(result_info.stdout)
-        
-        title = info.get("title", "YouTube Video")
-        duration = info.get("duration")
-        print(f"[YOUTUBE] Found: {title} ({duration}s)")
+        try:
+            cmd_info = ["python3", "-m", "yt_dlp", "--no-playlist", "--no-check-certificates", "-j", url]
+            result_info = subprocess.run(cmd_info, capture_output=True, text=True, check=True)
+            info = json.loads(result_info.stdout)
+            title = info.get("title", title)
+            duration = info.get("duration")
+        except Exception as e:
+            print(f"[YOUTUBE] Info fetch failed, using defaults: {e}")
 
-        # Download to a temporary location
-        ts = int(datetime.utcnow().timestamp())
-        base_name = f"{ts}_yt"
+        # Extract video ID for storage/identification
+        video_id = ""
+        if "v=" in url:
+            video_id = url.split("v=")[1].split("&")[0]
+        elif "youtu.be/" in url:
+            video_id = url.split("youtu.be/")[1].split("?")[0]
+        else:
+            video_id = url # Fallback to whole URL if we can't parse it easily
+            
+        media = Media(
+            name=title,
+            type="youtube",
+            url=url, 
+            duration=int(duration) if duration else None,
+        )
+        db.add(media)
+        db.commit()
+        db.refresh(media)
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_template = os.path.join(tmpdir, f"{base_name}.%(ext)s")
-            
-            # Prefer a single-file format to avoid merge dependency (ffmpeg)
-            cmd_dl = common_args + ["-f", "best[ext=mp4]/best", "-o", output_template, url]
-            print(f"[YOUTUBE] Starting download...")
-            subprocess.run(cmd_dl, check=True, capture_output=True, text=True)
-            
-            # Find the file
-            downloaded_files = list(Path(tmpdir).glob(f"{base_name}.*"))
-            if not downloaded_files:
-                raise ValueError("No file found after successful yt-dlp command")
-            
-            actual_file = downloaded_files[0]
-            filename = f"{ts}_{sanitise_filename(actual_file.name)}"
-            content_type = "video/mp4" if filename.lower().endswith(".mp4") else "video/webm"
-            
-            # Upload to Supabase
-            object_key = f"media/{filename}"
-            print(f"[YOUTUBE] Storing in bucket as {object_key}...")
-            stored_key = storage.upload_file(str(actual_file), object_key, content_type)
-            
-            media = Media(
-                name=stored_key,
-                type=content_type,
-                url="", 
-                duration=int(duration) if duration else None,
-            )
-            db.add(media)
-            db.commit()
-            db.refresh(media)
-            
-            write_audit_log(db, current_user['id'], "youtube_download", "media", str(media.id), meta={"url": url, "name": media.name, "title": title})
-            print(f"[YOUTUBE] Successfully added: {media.name}")
-            
-            return {
-                "id": str(media.id),
-                "name": media.name,
-                "type": "video",
-                "url": get_proxy_url(media.name),
-                "duration": media.duration,
-            }
+        write_audit_log(db, current_user['id'], "youtube_add", "media", str(media.id), meta={"url": url, "name": media.name, "title": title})
+        print(f"[YOUTUBE] Successfully added as embed: {media.name}")
         
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr or e.stdout or str(e)
-        error_snippet = error_msg.split('\n')[-2] if '\n' in error_msg.strip() else error_msg
-        print(f"[YOUTUBE] yt-dlp error output: {error_msg}")
-        raise HTTPException(status_code=400, detail=f"YouTube error: {error_snippet[:150]}")
+        return {
+            "id": str(media.id),
+            "name": media.name,
+            "type": "youtube",
+            "url": media.url,
+            "duration": media.duration,
+        }
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"[YOUTUBE] Fatal error: {e}")
+        print(f"[YOUTUBE] Fatal error adding embed: {e}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
@@ -355,8 +336,9 @@ def delete_media(
     if not media:
         raise HTTPException(status_code=404, detail="Media not found")
 
-    # Delete from Supabase
-    storage.delete_file(media.name)
+    # Delete from Supabase (only if it's not a youtube embed)
+    if media.type != "youtube":
+        storage.delete_file(media.name)
 
     db.delete(media)
     db.commit()

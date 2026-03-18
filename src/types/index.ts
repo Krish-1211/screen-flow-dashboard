@@ -16,7 +16,7 @@ export interface Screen {
 export interface Media {
     id: number | string;
     name: string;
-    type: 'image' | 'video';
+    type: 'image' | 'video' | 'youtube';
     url: string;
     duration?: number;
     thumbnail?: string;

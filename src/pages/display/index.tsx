@@ -190,7 +190,20 @@ export default function DisplayPlayerPage() {
   const currentItem = playlist.items[currentIndex];
   // ensure there is media before checking type
   const isVideo = currentItem?.media?.type === 'video';
+  const isYoutube = currentItem?.media?.type === 'youtube';
   const mediaUrl = currentItem?.media?.url || '/fallback.png';
+
+  const getYoutubeEmbedUrl = (url: string) => {
+    let videoId = "";
+    if (url.includes("v=")) {
+      videoId = url.split("v=")[1].split("&")[0];
+    } else if (url.includes("youtu.be/")) {
+      videoId = url.split("youtu.be/")[1].split("?")[0];
+    } else {
+      videoId = url;
+    }
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&rel=0&showinfo=0`;
+  };
 
   return (
     <div
@@ -211,7 +224,16 @@ export default function DisplayPlayerPage() {
         </div>
       ) : (
         <div className="absolute inset-0 transition-opacity duration-1000">
-          {isVideo ? (
+          {isYoutube ? (
+            <iframe
+              key={currentItem.id}
+              src={getYoutubeEmbedUrl(mediaUrl)}
+              className="w-full h-full border-none pointer-events-none"
+              allow="autoplay; encrypted-media"
+              title="YouTube Content"
+              onError={handleMediaError}
+            />
+          ) : isVideo ? (
             <video
               key={currentItem.id} // force re-mount for new source
               src={mediaUrl}

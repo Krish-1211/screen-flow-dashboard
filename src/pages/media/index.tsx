@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, Trash2, Image as ImageIcon, Film, RefreshCw } from "lucide-react";
+import { Upload, Trash2, Image as ImageIcon, Film, RefreshCw, Youtube } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -59,7 +59,7 @@ export default function MediaLibraryPage() {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       setYoutubeUrl("");
       setUploadOpen(false);
-      toast({ title: "YouTube download added", variant: "default" });
+      toast({ title: "YouTube embed added", variant: "default" });
     },
     onError: (err: any) => {
       const msg = err.response?.data?.detail || err.message;
@@ -160,7 +160,7 @@ export default function MediaLibraryPage() {
                         className="flex-1 bg-secondary rounded-md px-3 py-2 text-sm border-none focus:ring-1 focus:ring-primary outline-none"
                       />
                       <Button type="submit" disabled={youtubeMutation.isPending || !youtubeUrl.trim()}>
-                        {youtubeMutation.isPending ? "Downloading..." : "Add Video"}
+                        {youtubeMutation.isPending ? "Adding..." : "Add Video"}
                       </Button>
                     </div>
                   </div>
@@ -184,6 +184,8 @@ export default function MediaLibraryPage() {
                   ) : null}
                   {item.type === "image" ? (
                     <ImageIcon className="h-8 w-8 text-muted-foreground relative z-10" />
+                  ) : item.type === "youtube" ? (
+                    <Youtube className="h-8 w-8 text-muted-foreground relative z-10" />
                   ) : (
                     <Film className="h-8 w-8 text-muted-foreground relative z-10" />
                   )}
