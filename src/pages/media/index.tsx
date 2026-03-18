@@ -115,7 +115,7 @@ export default function MediaLibraryPage() {
     } else {
       videoId = url;
     }
-    return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+    return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   };
 
   return (
@@ -232,7 +232,17 @@ export default function MediaLibraryPage() {
                   {item.type === "image" ? (
                     <img src={item.url} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
                   ) : item.type === "youtube" ? (
-                    <img src={getYoutubeThumbnail(item.url)} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+                    <img
+                      src={getYoutubeThumbnail(item.url)}
+                      alt={item.name}
+                      className="absolute inset-0 w-full h-full object-cover"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        if (!target.src.includes('0.jpg')) {
+                          target.src = target.src.replace('hqdefault.jpg', '0.jpg');
+                        }
+                      }}
+                    />
                   ) : (
                     <div className="flex flex-col items-center text-muted-foreground">
                       <Film className="h-8 w-8 mb-2" />
