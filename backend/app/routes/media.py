@@ -187,7 +187,7 @@ def list_media(db: Session = Depends(get_db)):
                     "id": media_id,
                     "name": media_name,
                     "type": media_type,
-                    "url": m.url if media_type == "youtube" else get_proxy_url(m.name),
+                    "url": m.url if media_type == "youtube" else get_proxy_url(m.url if m.url else m.name),
                     "duration": duration,
                     "uploaded_at": uploaded_at,
                 })
@@ -242,9 +242,9 @@ async def upload_media(
         print(f"[MEDIA] Upload successful, stored key: {object_key}")
 
         media = Media(
-            name=name if name else object_key,
+            name=name if name else safe_name,
             type=content_type,
-            url="", # No longer storing static URL in DB
+            url=object_key, # Store object key in url for uploaded assets
             duration=None,
         )
         db.add(media)
@@ -258,7 +258,7 @@ async def upload_media(
             "id": str(media.id),
             "name": media.name,
             "type": file_type,
-            "url": get_proxy_url(media.name),
+            "url": get_proxy_url(media.url),
             "duration": media.duration,
         }
     except Exception as e:
@@ -353,7 +353,7 @@ def update_media(
         "id": str(media.id),
         "name": media.name,
         "type": "youtube" if is_youtube else media.type,
-        "url": media.url if is_youtube else get_proxy_url(media.name),
+        "url": media.url if is_youtube else get_proxy_url(media.url if media.url else media.name),
         "duration": float(media.duration) if media.duration else None,
     }
 
@@ -373,7 +373,8 @@ def delete_media(
 
     # Delete from Supabase (only if it's not a youtube embed)
     if not is_youtube:
-        storage.delete_file(media.name)
+        storage_key = media.url if media.url else media.name
+        storage.delete_file(storage_key)
 
     db.delete(media)
     db.commit()
