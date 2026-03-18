@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Monitor, ListMusic, Clock, RefreshCw, Trash2, Calendar } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Plus, Monitor, ListMusic, Clock, RefreshCw, Trash2, Calendar, Pencil } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,9 @@ const hours = Array.from({ length: 24 }, (_, i) => i);
 export default function SchedulesPage() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ 
+  const [editingGroup, setEditingGroup] = useState<any | null>(null);
+  
+  const initialForm = { 
     screen_id: "", 
     playlist_id: "", 
     name: "",
@@ -39,7 +41,14 @@ export default function SchedulesPage() {
     start_hour: 9, 
     end_hour: 17,
     active: true
-  });
+  };
+
+  const [form, setForm] = useState(initialForm);
+
+  const resetForm = () => {
+    setForm(initialForm);
+    setEditingGroup(null);
+  };
 
   const { data: schedules = [], isLoading: loadingSchedules } = useQuery({
     queryKey: ['schedules'],
@@ -56,21 +65,40 @@ export default function SchedulesPage() {
     queryFn: () => playlistsApi.getAll()
   });
 
+  const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+  const groupedSchedules = useMemo(() => {
+    const groups: any[] = [];
+    schedules.forEach((s: any) => {
+      const key = `${s.screen_id}-${s.playlist_id}-${s.start_hour}-${s.end_hour}-${s.name || ''}`;
+      let group = groups.find(g => g.key === key);
+      if (!group) {
+        group = {
+            key,
+            screen_id: s.screen_id,
+            playlist_id: s.playlist_id,
+            name: s.name,
+            start_hour: s.start_hour,
+            end_hour: s.end_hour,
+            ids: [],
+            dayIndices: []
+        };
+        groups.push(group);
+      }
+      group.ids.push(s.id);
+      const dayIdx = dayNames.indexOf(s.day);
+      if (dayIdx !== -1) group.dayIndices.push(dayIdx);
+    });
+    return groups;
+  }, [schedules]);
+
   const createMutation = useMutation({
     mutationFn: schedulesApi.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
       setOpen(false);
-      toast.success("Schedule created successfully");
-      setForm({
-        screen_id: "", 
-        playlist_id: "", 
-        name: "",
-        days_of_week: [0, 1, 2, 3, 4], 
-        start_hour: 9, 
-        end_hour: 17,
-        active: true
-      });
+      toast.success(editingGroup ? "Schedule updated" : "Schedule created");
+      resetForm();
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Failed to create schedule");
@@ -88,9 +116,13 @@ export default function SchedulesPage() {
   const addSchedule = async () => {
     if (!form.screen_id || !form.playlist_id) return;
     
-    // We send multiple requests, one for each day
-    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-    
+    // If update, delete old entries first
+    if (editingGroup) {
+        for (const id of editingGroup.ids) {
+            await schedulesApi.delete(id);
+        }
+    }
+
     for (const dayIndex of form.days_of_week) {
         try {
             await createMutation.mutateAsync({
@@ -104,6 +136,30 @@ export default function SchedulesPage() {
         } catch (e) {
             console.error(`Failed to create schedule for day ${dayIndex}`, e);
         }
+    }
+  };
+
+  const handleEdit = (group: any) => {
+    setEditingGroup(group);
+    setForm({
+        screen_id: group.screen_id,
+        playlist_id: group.playlist_id,
+        name: group.name || "",
+        days_of_week: group.dayIndices,
+        start_hour: group.start_hour,
+        end_hour: group.end_hour,
+        active: true
+    });
+    setOpen(true);
+  };
+
+  const handleDeleteGroup = async (ids: string[]) => {
+    try {
+        await Promise.all(ids.map(id => schedulesApi.delete(id)));
+        queryClient.invalidateQueries({ queryKey: ['schedules'] });
+        toast.success("Schedule deleted");
+    } catch (err) {
+        toast.error("Failed to delete schedule");
     }
   };
 
@@ -143,13 +199,16 @@ export default function SchedulesPage() {
             <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ['schedules'] })}>
               <RefreshCw className={cn("h-4 w-4", loadingSchedules && "animate-spin")} />
             </Button>
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={open} onOpenChange={(val) => {
+                if (!val) resetForm();
+                setOpen(val);
+            }}>
               <DialogTrigger asChild>
-                <Button><Plus className="h-4 w-4 mr-2" />Add Schedule</Button>
+                <Button onClick={resetForm}><Plus className="h-4 w-4 mr-2" />Add Schedule</Button>
               </DialogTrigger>
               <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>New Schedule</DialogTitle>
+                  <DialogTitle>{editingGroup ? "Edit Schedule" : "New Schedule"}</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 pt-2">
                   <div className="space-y-2">
@@ -209,7 +268,7 @@ export default function SchedulesPage() {
                     </div>
                   </div>
                   <Button onClick={addSchedule} className="w-full" disabled={createMutation.isPending || !form.screen_id || !form.playlist_id}>
-                    {createMutation.isPending ? "Creating..." : "Create Schedule"}
+                    {createMutation.isPending ? "Saving..." : editingGroup ? "Update Schedule" : "Create Schedule"}
                   </Button>
                 </div>
               </DialogContent>
@@ -267,40 +326,61 @@ export default function SchedulesPage() {
             <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">{schedules.length} Items</span>
           </div>
           <div className="divide-y divide-border">
-            {schedules.length === 0 ? (
+            {groupedSchedules.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
                     <Calendar className="h-8 w-8 mx-auto opacity-20 mb-2" />
                     <p className="text-sm">No schedules have been created yet.</p>
                 </div>
-            ) : schedules.map((s: any) => {
-              const screenName = screens.find((sc: any) => sc.id === s.screen_id)?.name || "Unknown Screen";
-              const playlistName = playlists.find((p: any) => p.id === s.playlist_id)?.name || "Unknown Playlist";
+            ) : groupedSchedules.map((g: any) => {
+              const screenName = screens.find((sc: any) => sc.id === g.screen_id)?.name || "Unknown Screen";
+              const playlistName = playlists.find((p: any) => p.id === g.playlist_id)?.name || "Unknown Playlist";
               return (
-                <div key={s.id} className="flex items-center gap-4 p-4 hover:bg-accent/5 transition-colors group">
+                <div key={g.key} className="flex items-center gap-4 p-4 hover:bg-accent/5 transition-colors group">
                   <div className="h-10 w-10 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center">
                       <Clock className="h-5 w-5 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-foreground font-medium flex items-center gap-2">
-                        {s.name || screenName}
-                        {s.name && <span className="text-[10px] font-normal text-muted-foreground bg-secondary px-1.5 py-0.5 rounded flex items-center gap-1"><Monitor className="h-3 w-3" /> {screenName}</span>}
+                        {g.name || screenName}
+                        {g.name && <span className="text-[10px] font-normal text-muted-foreground bg-secondary px-1.5 py-0.5 rounded flex items-center gap-1"><Monitor className="h-3 w-3" /> {screenName}</span>}
                     </p>
-                    <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground mt-1">
-                      <div className="flex items-center gap-1.5">
-                          <ListMusic className="h-3 w-3" />
-                          <span>{playlistName}</span>
+                    <div className="flex flex-col gap-2 mt-1">
+                      <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1.5">
+                            <ListMusic className="h-3 w-3" />
+                            <span>{playlistName}</span>
+                        </div>
+                        <span className="text-border">•</span>
+                        <div className="flex items-center gap-1.5 font-mono">
+                            <span>{String(g.start_hour).padStart(2, '0')}:00 – {String(g.end_hour).padStart(2, '0')}:00</span>
+                        </div>
                       </div>
-                      <span className="text-border">•</span>
-                      <div className="flex items-center gap-1.5 font-mono">
-                          <span>{String(s.start_hour).padStart(2, '0')}:00 – {String(s.end_hour).padStart(2, '0')}:00</span>
-                          <span className="text-primary font-bold ml-1">{s.day}</span>
+                      
+                      <div className="flex items-center gap-1">
+                          {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                              <div 
+                                key={i} 
+                                className={cn(
+                                    "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all",
+                                    g.dayIndices.includes(i) 
+                                        ? "bg-primary text-primary-foreground shadow-sm" 
+                                        : "bg-secondary text-muted-foreground/30"
+                                )}
+                              >
+                                  {d}
+                              </div>
+                          ))}
                       </div>
                     </div>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(s.id)}
-                    className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" onClick={() => handleEdit(g)} className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                        <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleDeleteGroup(g.ids)} className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                        <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               );
             })}
