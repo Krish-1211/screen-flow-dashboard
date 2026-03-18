@@ -272,22 +272,18 @@ async def add_youtube_media(
 ):
     url = payload.url
     
-    # Use yt-dlp to get video info in JSON format for robustness
+    # Try to fetch info first using yt-dlp Python module via subprocess
     try:
-        cmd_info = [
-            "yt-dlp",
-            "-j", # Output JSON
-            "--no-playlist",
-            url
-        ]
-        print(f"[YOUTUBE] Getting info for {url}...")
-        result = subprocess.run(cmd_info, capture_output=True, text=True, check=True)
-        info = json.loads(result.stdout)
+        common_args = ["python3", "-m", "yt_dlp", "--no-playlist", "--no-check-certificates"]
+        
+        # Get info JSON
+        cmd_info = common_args + ["-j", url]
+        print(f"[YOUTUBE] Fetching info for {url}...")
+        result_info = subprocess.run(cmd_info, capture_output=True, text=True, check=True)
+        info = json.loads(result_info.stdout)
         
         title = info.get("title", "YouTube Video")
         duration = info.get("duration")
-        ext = info.get("ext", "mp4")
-        
         print(f"[YOUTUBE] Found: {title} ({duration}s)")
 
         # Download to a temporary location
@@ -295,31 +291,25 @@ async def add_youtube_media(
         base_name = f"{ts}_yt"
         
         with tempfile.TemporaryDirectory() as tmpdir:
-            # We try to get the best single-file MP4 if possible to avoid merge dependency
-            # Fallback to best if necessary
             output_template = os.path.join(tmpdir, f"{base_name}.%(ext)s")
             
-            print(f"[YOUTUBE] Starting download for {url}...")
-            subprocess.run([
-                "yt-dlp",
-                "-f", "best[ext=mp4]/best",
-                "-o", output_template,
-                "--no-playlist",
-                url
-            ], check=True, capture_output=True)
+            # Prefer a single-file format to avoid merge dependency (ffmpeg)
+            cmd_dl = common_args + ["-f", "best[ext=mp4]/best", "-o", output_template, url]
+            print(f"[YOUTUBE] Starting download...")
+            subprocess.run(cmd_dl, check=True, capture_output=True, text=True)
             
-            # Find the file in tmpdir
+            # Find the file
             downloaded_files = list(Path(tmpdir).glob(f"{base_name}.*"))
             if not downloaded_files:
-                raise HTTPException(status_code=500, detail="Download failed: No file found after download")
+                raise ValueError("No file found after successful yt-dlp command")
             
             actual_file = downloaded_files[0]
-            filename = f"{ts}_{sanitise_filename(actual_file.name)}" # Ensure unique name
+            filename = f"{ts}_{sanitise_filename(actual_file.name)}"
             content_type = "video/mp4" if filename.lower().endswith(".mp4") else "video/webm"
             
             # Upload to Supabase
             object_key = f"media/{filename}"
-            print(f"[YOUTUBE] Uploading to Supabase as {object_key}...")
+            print(f"[YOUTUBE] Storing in bucket as {object_key}...")
             stored_key = storage.upload_file(str(actual_file), object_key, content_type)
             
             media = Media(
@@ -333,8 +323,8 @@ async def add_youtube_media(
             db.refresh(media)
             
             write_audit_log(db, current_user['id'], "youtube_download", "media", str(media.id), meta={"url": url, "name": media.name, "title": title})
-            
             print(f"[YOUTUBE] Successfully added: {media.name}")
+            
             return {
                 "id": str(media.id),
                 "name": media.name,
@@ -344,14 +334,15 @@ async def add_youtube_media(
             }
         
     except subprocess.CalledProcessError as e:
-        error_detail = e.stderr or e.stdout or str(e)
-        print(f"[YOUTUBE] yt-dlp Error: {error_detail}")
-        raise HTTPException(status_code=400, detail=f"yt-dlp error: {error_detail[:200]}")
+        error_msg = e.stderr or e.stdout or str(e)
+        error_snippet = error_msg.split('\n')[-2] if '\n' in error_msg.strip() else error_msg
+        print(f"[YOUTUBE] yt-dlp error output: {error_msg}")
+        raise HTTPException(status_code=400, detail=f"YouTube error: {error_snippet[:150]}")
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"[YOUTUBE] Unexpected Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[YOUTUBE] Fatal error: {e}")
+        raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
 
 @router.delete("/{media_id}", status_code=204)

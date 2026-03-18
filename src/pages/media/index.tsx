@@ -35,7 +35,8 @@ export default function MediaLibraryPage() {
       toast({ title: "Media deleted", variant: "default" });
     },
     onError: (err: any) => {
-      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+      const msg = err.response?.data?.detail || err.message;
+      toast({ title: "Delete failed", description: msg, variant: "destructive" });
     }
   });
 
@@ -47,7 +48,8 @@ export default function MediaLibraryPage() {
       toast({ title: "Upload successful", variant: "default" });
     },
     onError: (err: any) => {
-      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+      const msg = err.response?.data?.detail || err.message;
+      toast({ title: "Upload failed", description: msg, variant: "destructive" });
     }
   });
 
@@ -60,7 +62,8 @@ export default function MediaLibraryPage() {
       toast({ title: "YouTube download added", variant: "default" });
     },
     onError: (err: any) => {
-      toast({ title: "YouTube download failed", description: err.message, variant: "destructive" });
+      const msg = err.response?.data?.detail || err.message;
+      toast({ title: "YouTube download failed", description: msg, variant: "destructive" });
     }
   });
 
