@@ -297,14 +297,15 @@ def get_screen_playlist(screen_id: str, db: Session = Depends(get_db)):
 
     # Check for active schedule
     now = datetime.now(timezone.utc)
-    current_hour = now.hour
-    current_day_name = now.strftime("%A") # Monday, Tuesday, etc.
+    current_time = now.strftime("%H:%M:%S")
+    current_day_idx = now.weekday() # 0-6 (Mon-Sun)
     
     active_sch = db.query(Schedule).filter(
         Schedule.screen_id == screen.id,
-        Schedule.day == current_day_name,
-        Schedule.start_hour <= current_hour,
-        Schedule.end_hour > current_hour
+        Schedule.active == True,
+        text(":day = ANY(days_of_week)").bindparams(day=current_day_idx),
+        Schedule.start_time <= current_time,
+        Schedule.end_time > current_time
     ).first()
 
     playlist_id = screen.playlist_id

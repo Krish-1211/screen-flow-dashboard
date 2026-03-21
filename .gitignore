@@ -37,7 +37,7 @@ cloudflared.tgz
 tunnel.js
 pinggy*
 lh*
-server.js
+# server.js # Removed from ignore because it is now the main server.
 
 # Python
 __pycache__/
@@ -52,3 +52,6 @@ backend/app/__pycache__/
 backend/app/models/__pycache__/
 backend/app/routes/__pycache__/
 backend/app/services/__pycache__/
+
+/src/generated/prisma
+*.db

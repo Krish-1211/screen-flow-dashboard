@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Screen {
+  id                String   @id @default(uuid())
+  name              String
+  deviceId          String   @unique
+  status            String   @default("offline")
+  lastSeen          DateTime?
+  currentPlaylistId String?
+}
+
+model Media {
+  id        String   @id @default(uuid())
+  name      String
+  type      String
+  url       String
+  duration  Float?
+  createdAt DateTime @default(now())
+}
+
+model Playlist {
+  id    String         @id @default(uuid())
+  name  String
+  items PlaylistItem[]
+}
+
+model PlaylistItem {
+  id         String  @id @default(uuid())
+  playlistId String
+  mediaId    String
+  order      Int
+  duration   Float?
+
+  playlist Playlist @relation(fields: [playlistId], references: [id])
+}
+
+model Schedule {
+  id         String   @id @default(uuid())
+  screenId   String?
+  playlistId String
+  daysOfWeek String   // Workaround for SQLite missing array support
+  startTime  String
+  endTime    String
+}

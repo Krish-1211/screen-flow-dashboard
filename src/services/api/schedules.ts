@@ -5,9 +5,10 @@ export interface Schedule {
     screen_id: string;
     playlist_id: string;
     name?: string;
-    day: string;
-    start_hour: number;
-    end_hour: number;
+    days_of_week: number[];
+    start_time: string;
+    end_time: string;
+    active: boolean;
     created_at: string;
 }
 

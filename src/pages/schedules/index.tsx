@@ -39,8 +39,8 @@ export default function SchedulesPage() {
     playlist_id: "", 
     name: "",
     days_of_week: [0, 1, 2, 3, 4], 
-    start_hour: 9, 
-    end_hour: 17,
+    start_time: "09:00:00", 
+    end_time: "17:00:00",
     active: true
   };
 
@@ -68,30 +68,7 @@ export default function SchedulesPage() {
 
   const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-  const groupedSchedules = useMemo(() => {
-    const groups: any[] = [];
-    schedules.forEach((s: any) => {
-      const key = `${s.screen_id}-${s.playlist_id}-${s.start_hour}-${s.end_hour}-${s.name || ''}`;
-      let group = groups.find(g => g.key === key);
-      if (!group) {
-        group = {
-            key,
-            screen_id: s.screen_id,
-            playlist_id: s.playlist_id,
-            name: s.name,
-            start_hour: s.start_hour,
-            end_hour: s.end_hour,
-            ids: [],
-            dayIndices: []
-        };
-        groups.push(group);
-      }
-      group.ids.push(s.id);
-      const dayIdx = dayNames.indexOf(s.day);
-      if (dayIdx !== -1) group.dayIndices.push(dayIdx);
-    });
-    return groups;
-  }, [schedules]);
+  const groupedSchedules = schedules; // No longer need grouping logic
 
   const createMutation = useMutation({
     mutationFn: schedulesApi.create,
@@ -117,39 +94,30 @@ export default function SchedulesPage() {
   const addSchedule = async () => {
     if (!form.screen_id || !form.playlist_id) return;
     
-    // If update, delete old entries first
-    if (editingGroup) {
-        for (const id of editingGroup.ids) {
-            await schedulesApi.delete(id);
-        }
-    }
-
-    for (const dayIndex of form.days_of_week) {
-        try {
+    try {
+        if (editingGroup) {
             await createMutation.mutateAsync({
-                screen_id: form.screen_id,
-                playlist_id: form.playlist_id,
-                name: form.name || undefined,
-                day: dayNames[dayIndex],
-                start_hour: form.start_hour,
-                end_hour: form.end_hour,
-            });
-        } catch (e) {
-            console.error(`Failed to create schedule for day ${dayIndex}`, e);
+                ...form,
+                id: editingGroup.id
+            } as any);
+        } else {
+            await createMutation.mutateAsync(form as any);
         }
+    } catch (e) {
+        console.error("Failed to save schedule", e);
     }
   };
 
-  const handleEdit = (group: any) => {
-    setEditingGroup(group);
+  const handleEdit = (s: any) => {
+    setEditingGroup(s);
     setForm({
-        screen_id: group.screen_id,
-        playlist_id: group.playlist_id,
-        name: group.name || "",
-        days_of_week: group.dayIndices,
-        start_hour: group.start_hour,
-        end_hour: group.end_hour,
-        active: true
+        screen_id: s.screen_id,
+        playlist_id: s.playlist_id,
+        name: s.name || "",
+        days_of_week: s.days_of_week,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        active: s.active
     });
     setOpen(true);
   };
@@ -174,13 +142,12 @@ export default function SchedulesPage() {
   };
 
   const getBlocksForDayAndHour = (dayIndex: number, hour: number) => {
-    const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-    const dayName = dayNames[dayIndex];
-    
     return schedules.filter(
       (s: any) => {
-          if (s.day !== dayName) return false;
-          return hour >= s.start_hour && hour < s.end_hour;
+          if (!s.days_of_week?.includes(dayIndex)) return false;
+          const startH = parseInt(s.start_time.split(':')[0]);
+          const endH = parseInt(s.end_time.split(':')[0]);
+          return hour >= startH && hour < endH;
       }
     );
   };
@@ -266,12 +233,12 @@ export default function SchedulesPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Start Hour (0-23)</Label>
-                      <Input type="number" min={0} max={23} value={form.start_hour} onChange={(e) => setForm({ ...form, start_hour: parseInt(e.target.value) })} className="bg-secondary" />
+                      <Label>Start Time</Label>
+                      <Input type="time" value={form.start_time.slice(0, 5)} onChange={(e) => setForm({ ...form, start_time: e.target.value + ":00" })} className="bg-secondary" />
                     </div>
                     <div className="space-y-2">
-                      <Label>End Hour (1-24)</Label>
-                      <Input type="number" min={1} max={24} value={form.end_hour} onChange={(e) => setForm({ ...form, end_hour: parseInt(e.target.value) })} className="bg-secondary" />
+                      <Label>End Time</Label>
+                      <Input type="time" value={form.end_time.slice(0, 5)} onChange={(e) => setForm({ ...form, end_time: e.target.value + ":00" })} className="bg-secondary" />
                     </div>
                   </div>
                   <Button onClick={addSchedule} className="w-full" disabled={createMutation.isPending || !form.screen_id || !form.playlist_id}>
@@ -303,18 +270,18 @@ export default function SchedulesPage() {
                   const blocks = getBlocksForDayAndHour(dayIndex, h);
                   return (
                     <div key={h} className="border-l border-border h-12 relative z-0">
-                      {blocks.map((b: any) => {
-                        const playlistName = playlists.find((p: any) => p.id === b.playlist_id)?.name || "Unknown";
-                        const startH = b.start_hour;
-                        const endH = b.end_hour;
+                      {blocks.map((s: any) => {
+                        const playlistName = playlists.find((p: any) => p.id === s.playlist_id)?.name || "Unknown";
+                        const startH = parseInt(s.start_time.split(':')[0]);
+                        const endH = parseInt(s.end_time.split(':')[0]);
                         return h === startH && (
                           <div
-                            key={b.id}
+                            key={s.id}
                             className="absolute top-1 bottom-1 left-0 bg-primary/20 border border-primary/30 rounded text-[9px] text-primary px-1.5 flex items-center overflow-hidden z-10 hover:bg-primary/30 hover:border-primary/50 transition-colors"
                             style={{ width: `calc(${(endH - startH) * 100}% + ${(endH - startH - 1)}px)` }}
-                            title={`${b.name || playlistName} (${startH}:00 - ${endH}:00)`}
+                            title={`${s.name || playlistName} (${s.start_time} - ${s.end_time})`}
                           >
-                            <span className="truncate whitespace-nowrap font-medium">{b.name || playlistName}</span>
+                            <span className="truncate whitespace-nowrap font-medium">{s.name || playlistName}</span>
                           </div>
                         );
                       })}
@@ -359,7 +326,7 @@ export default function SchedulesPage() {
                         </div>
                         <span className="text-border">•</span>
                         <div className="flex items-center gap-1.5 font-mono">
-                            <span>{String(g.start_hour).padStart(2, '0')}:00 – {String(g.end_hour).padStart(2, '0')}:00</span>
+                            <span>{g.start_time.slice(0, 5)} – {g.end_time.slice(0, 5)}</span>
                         </div>
                       </div>
                       
@@ -369,7 +336,7 @@ export default function SchedulesPage() {
                                 key={i} 
                                 className={cn(
                                     "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-all",
-                                    g.dayIndices.includes(i) 
+                                    g.days_of_week.includes(i) 
                                         ? "bg-primary text-primary-foreground shadow-sm" 
                                         : "bg-secondary text-muted-foreground/30"
                                 )}
@@ -384,7 +351,7 @@ export default function SchedulesPage() {
                     <Button variant="ghost" size="icon" onClick={() => handleEdit(g)} className="h-8 w-8 text-muted-foreground hover:text-foreground">
                         <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDeleteGroup(g.ids)} className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                    <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(g.id)} className="h-8 w-8 text-muted-foreground hover:text-destructive">
                         <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
