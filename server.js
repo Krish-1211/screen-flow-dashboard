@@ -16,13 +16,19 @@ const logger = pino({
   }
 });
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const prisma = new PrismaClient();
 const app = express();
-const upload = multer();
 
-const allowedOrigins = process.env.CORS_ALLOWED_ORIGINS 
-    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
-    : ['http://localhost:5173', 'http://localhost:8080'];
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, 'media/uploads/'),
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+});
+const upload = multer({ storage });
 
 app.use(cors({
     origin: (origin, callback) => {
@@ -37,6 +43,7 @@ app.use(cors({
     credentials: true
 }));
 app.use(express.json());
+app.use('/media/uploads', express.static('media/uploads'));
 
 // PHASE 9: LOGGING (API Requests)
 app.use((req, res, next) => {
@@ -293,6 +300,22 @@ app.delete('/screens/:id', async (req, res) => {
 });
 
 // Media
+app.post('/media/upload', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: "No file provided" });
+        const type = req.file.mimetype.startsWith('video') ? 'video' : 'image';
+        const url = `/media/uploads/${req.file.filename}`;
+        const newMedia = await prisma.media.create({
+            data: { 
+                name: req.body.name || req.file.originalname, 
+                url, 
+                type,
+                duration: req.body.duration ? parseInt(req.body.duration) : null
+            }
+        });
+        res.json(newMedia);
+    } catch (e) { res.status(500).json({ error: "Upload failed" }); }
+});
 app.get('/media', async (req, res) => {
     const media = await prisma.media.findMany();
     res.json(media);
