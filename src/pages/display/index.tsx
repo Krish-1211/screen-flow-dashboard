@@ -1,22 +1,32 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { WifiOff, AlertTriangle } from "lucide-react";
-import { syncService } from "@/services/sync-service";
+import { WifiOff, AlertTriangle, Play } from "lucide-react";
 import { screensApi } from "@/services/api/screens";
 import type { Playlist } from "@/types";
 
 export default function DisplayPlayerPage() {
   const [searchParams] = useSearchParams();
   const deviceId = searchParams.get("device_id");
+  
+  const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [connected, setConnected] = useState(navigator.onLine);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(true);
   const [mediaError, setMediaError] = useState(false);
+  
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Enter fullscreen on mount if possible and handle kiosk mode
+  const handleStart = () => {
+    setStarted(true);
+    if (!document.fullscreenElement && containerRef.current) {
+      containerRef.current.requestFullscreen().catch((err) => {
+        console.warn("Fullscreen request failed:", err);
+      });
+    }
+  };
+
   useEffect(() => {
     const handleContext = (e: Event) => e.preventDefault();
     document.addEventListener("contextmenu", handleContext);
@@ -29,20 +39,16 @@ export default function DisplayPlayerPage() {
   }, []);
 
   const preloadMedia = useCallback(async (pl: Playlist) => {
-    console.log("Preloading media for offline use...");
+    console.log("Preloading media...");
     const fetchPromises = pl.items.map(item => {
       if (item.media?.url && item.media.type !== 'youtube') {
         return fetch(item.media.url)
-          .then(res => {
-            if (!res.ok) throw new Error(`Status ${res.status}`);
-            return res;
-          })
-          .catch(err => console.error(`Failed to preload ${item.media?.name}:`, err.message));
+          .then(res => res.ok ? res : Promise.reject())
+          .catch(() => {});
       }
       return Promise.resolve();
     });
     await Promise.all(fetchPromises);
-    console.log("Preload complete.");
   }, []);
 
   useEffect(() => {
@@ -50,44 +56,35 @@ export default function DisplayPlayerPage() {
     let interval: any;
 
     const startHeartbeat = async () => {
-      try {
-        // Start periodic heartbeats with deviceId
+      screensApi.heartbeat(deviceId).catch(console.error);
+      interval = setInterval(() => {
         screensApi.heartbeat(deviceId).catch(console.error);
-        interval = setInterval(() => {
-          screensApi.heartbeat(deviceId).catch(console.error);
-        }, 30000);
+      }, 30000);
 
-        // Signal offline on tab close
-        const handleUnload = () => {
-          const data = JSON.stringify({ status: 'offline', device_id: deviceId });
-          const url = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/screens/heartbeat`;
-          navigator.sendBeacon(url, data);
-        };
-        window.addEventListener('beforeunload', handleUnload);
-        return () => {
-          clearInterval(interval);
-          window.removeEventListener('beforeunload', handleUnload);
-        };
-      } catch (err) {
-        console.error("Heartbeat initialization failed", err);
-      }
+      const handleUnload = () => {
+        const data = JSON.stringify({ status: 'offline', device_id: deviceId });
+        const url = `${import.meta.env.VITE_API_URL || 'https://screen-api-6sac.onrender.com'}/screens/heartbeat`;
+        navigator.sendBeacon(url, data);
+      };
+      window.addEventListener('beforeunload', handleUnload);
+      
+      return () => {
+        clearInterval(interval);
+        window.removeEventListener('beforeunload', handleUnload);
+      };
     };
 
     startHeartbeat();
-    return () => {
-      if (interval) clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, [deviceId]);
 
   const loadPlaylist = useCallback(async (isInitial = false) => {
     if (!deviceId) return;
     try {
       if (isInitial && !playlist) setLoading(true);
-      // Fetch the full screen + playlist config using device_id
       const data = await screensApi.getPlayerConfig(deviceId);
       
-      if (data.id) {
-        // data here is a serialized playlist with items
+      if (data && data.items) {
         setPlaylist(data);
         localStorage.setItem(`offline-playlist-${deviceId}`, JSON.stringify(data));
         preloadMedia(data);
@@ -95,7 +92,7 @@ export default function DisplayPlayerPage() {
         setPlaylist(null);
       }
     } catch (err) {
-      console.error("Failed to load playlist, trying offline storage", err);
+      console.error("Failed to load playlist, using offline storage", err);
       const offline = localStorage.getItem(`offline-playlist-${deviceId}`);
       if (offline) {
         const pl = JSON.parse(offline);
@@ -103,7 +100,7 @@ export default function DisplayPlayerPage() {
         preloadMedia(pl);
       }
     } finally {
-      setLoading(false);
+      if (isInitial) setLoading(false);
     }
   }, [deviceId, preloadMedia, playlist]);
 
@@ -136,7 +133,7 @@ export default function DisplayPlayerPage() {
 
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (!playlist?.items?.length) return;
+    if (!playlist?.items?.length || !started) return;
 
     const currentItem = playlist.items[currentIndex];
     const duration = currentItem.duration || 10;
@@ -146,13 +143,12 @@ export default function DisplayPlayerPage() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [currentIndex, playlist, advanceMedia]);
+  }, [currentIndex, playlist, advanceMedia, started]);
 
   const handleMediaError = (e: any) => {
-    const errorMsg = e?.target?.error ? `Error Code: ${e.target.error.code} - ${e.target.error.message}` : "General playback error";
-    console.error(`Playback failed for ${currentItem?.media?.name}:`, errorMsg);
+    console.error("Playback failed:", e);
     setMediaError(true);
-    setTimeout(advanceMedia, 5000); // skip to next after 5s
+    setTimeout(advanceMedia, 5000);
   };
 
   if (loading) {
@@ -167,106 +163,101 @@ export default function DisplayPlayerPage() {
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white">
         <AlertTriangle className="w-16 h-16 text-red-500 mb-4" />
-        <h1 className="text-3xl font-bold">No Screen ID Provided</h1>
-        <p className="mt-2 text-gray-400">Please use the URL generated from the dashboard.</p>
+        <h1 className="text-3xl font-bold">Missing Device ID</h1>
+        <p className="mt-2 text-gray-400">Please use the full URL from your dashboard.</p>
+      </div>
+    );
+  }
+
+  if (!started) {
+    return (
+      <div 
+        ref={containerRef}
+        className="fixed inset-0 bg-[#0a0a0b] flex flex-col items-center justify-center text-white cursor-pointer select-none"
+        onClick={handleStart}
+      >
+        <div className="relative group">
+          <div className="absolute -inset-4 bg-primary/20 rounded-full blur-xl group-hover:bg-primary/30 transition-all duration-500 animate-pulse"></div>
+          <div className="relative w-24 h-24 bg-primary/10 border border-primary/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
+            <Play className="w-10 h-10 text-primary fill-primary" />
+          </div>
+        </div>
+        <h1 className="text-3xl font-light mt-8 tracking-wider uppercase">Signage Player</h1>
+        <p className="text-muted-foreground mt-4 font-medium animate-pulse">Click anywhere to start with audio</p>
+        <div className="mt-12 text-[10px] text-gray-600 font-mono tracking-widest uppercase py-1 px-3 border border-gray-800 rounded">
+          DEVICED ID: {deviceId}
+        </div>
       </div>
     );
   }
 
   if (!playlist || playlist.items.length === 0) {
     return (
-      <div
-        ref={containerRef}
-        className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white cursor-pointer"
-        onClick={() => {
-          if (!document.fullscreenElement) {
-            containerRef.current?.requestFullscreen().catch(console.error);
-          }
-        }}
-      >
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-6 text-center">
         <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
-        <h1 className="text-3xl font-bold">No Content Assigned</h1>
-        <p className="mt-2 text-gray-400">Please assign a playlist to this screen from the dashboard.</p>
-        {!document.fullscreenElement && <p className="mt-4 text-xs text-gray-600">Click to enter fullscreen</p>}
+        <h1 className="text-2xl font-bold">No Content Assigned</h1>
+        <p className="mt-2 text-gray-400 max-w-md">Please assign a playlist to this screen from the dashboard to begin playback.</p>
       </div>
     );
   }
 
   const currentItem = playlist.items[currentIndex];
-  // ensure there is media before checking type
   const isVideo = currentItem?.media?.type === 'video';
   const isYoutube = currentItem?.media?.type === 'youtube';
-  const mediaUrl = currentItem?.media?.url || '/fallback.png';
+  const mediaUrl = currentItem?.media?.url || '';
 
   const getYoutubeEmbedUrl = (url: string) => {
     let videoId = "";
-    if (url.includes("v=")) {
-      videoId = url.split("v=")[1].split("&")[0];
-    } else if (url.includes("youtu.be/")) {
-      videoId = url.split("youtu.be/")[1].split("?")[0];
-    } else {
-      videoId = url;
-    }
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&rel=0&showinfo=0`;
+    if (url.includes("v=")) videoId = url.split("v=")[1].split("&")[0];
+    else if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
+    else videoId = url;
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&controls=0&modestbranding=1&loop=1&rel=0&showinfo=0`;
   };
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden cursor-none"
-      onClick={() => {
-        if (!document.fullscreenElement) {
-          containerRef.current?.requestFullscreen().catch(console.error);
-        }
-      }}
-    >
-      {/* Media Player */}
+    <div ref={containerRef} className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden cursor-none">
       {mediaError ? (
         <div className="flex flex-col items-center justify-center text-white">
           <AlertTriangle className="w-16 h-16 text-red-500 mb-4" />
-          <h2 className="text-2xl font-bold">Media Format Error</h2>
-          <p className="text-gray-400">Skipping to next item...</p>
+          <h2 className="text-2xl font-bold">Media Error</h2>
+          <p className="text-gray-400">Skipping in 5s...</p>
         </div>
       ) : (
-        <div className="absolute inset-0 transition-opacity duration-1000">
+        <div className="absolute inset-0">
           {isYoutube ? (
             <iframe
               key={currentItem.id}
               src={getYoutubeEmbedUrl(mediaUrl)}
-              className="w-full h-full border-none pointer-events-none"
+              className="w-full h-full border-none"
               allow="autoplay; encrypted-media"
-              title="YouTube Content"
-              onError={handleMediaError}
+              title="YouTube"
             />
           ) : isVideo ? (
             <video
-              key={currentItem.id} // force re-mount for new source
+              key={currentItem.id}
               src={mediaUrl}
-              className="w-full h-full object-cover animate-in fade-in duration-1000"
+              className="w-full h-full object-cover"
               autoPlay
               playsInline
-              crossOrigin="anonymous"
               onError={handleMediaError}
-              onEnded={advanceMedia} // videos might dictate their own duration playback
+              onEnded={advanceMedia}
             />
           ) : (
             <img
               key={currentItem.id}
               src={mediaUrl}
-              className="w-full h-full object-cover animate-in fade-in duration-1000"
-              alt="Signage Content"
-              crossOrigin="anonymous"
+              className="w-full h-full object-cover"
+              alt="Content"
               onError={handleMediaError}
             />
           )}
         </div>
       )}
 
-      {/* Connection Mode Indicator (Only show if offline for Kiosk) */}
       {!connected && (
         <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1.5 z-50">
           <WifiOff className="h-4 w-4 text-red-500" />
-          <span className="text-xs text-red-500 font-bold">OFFLINE</span>
+          <span className="text-xs text-red-500 font-bold uppercase">Offline</span>
         </div>
       )}
     </div>
