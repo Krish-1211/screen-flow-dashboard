@@ -176,6 +176,45 @@ app.get(['/screens', '/screens/'], async (req, res) => {
     }
 });
 
+// PHASE 6: PLAYER API
+app.get('/screens/player', async (req, res) => {
+    try {
+        const { device_id, local_time, local_day } = req.query;
+        if (!device_id) return res.status(400).json({ error: "device_id is required" });
+
+        let screen = await prisma.screen.findUnique({ where: { deviceId: device_id } });
+        
+        if (!screen) {
+            screen = await prisma.screen.create({
+                data: {
+                    deviceId: device_id,
+                    name: `New Screen (${device_id.slice(-4)})`,
+                    status: 'online',
+                    lastSeen: new Date()
+                }
+            });
+            logger.info({ deviceId: device_id }, 'Auto-registered new screen');
+        }
+
+        const activePlaylist = await getActivePlaylist(screen, local_time, local_day);
+        
+        if (!activePlaylist) {
+            return res.json({
+                id: "fallback",
+                name: "No Content",
+                items: [{
+                    id: "f1",
+                    media: { name: "No Content", type: "image", url: "https://placehold.co/1920x1080?text=No+Content" },
+                    duration: 10
+                }]
+            });
+        }
+        res.json(activePlaylist);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/screens/:id', async (req, res) => {
     const s = await prisma.screen.findUnique({ where: { id: req.params.id } });
     if (!s) return res.status(404).json({ error: "Screen not found" });
@@ -411,45 +450,7 @@ app.delete('/schedules/:id', async (req, res) => {
     res.status(204).send();
 });
 
-// PHASE 6: PLAYER API
-app.get('/screens/player', async (req, res) => {
-    try {
-        const { device_id, local_time, local_day } = req.query;
-        if (!device_id) return res.status(400).json({ error: "device_id is required" });
-
-        let screen = await prisma.screen.findUnique({ where: { deviceId: device_id } });
-        
-        if (!screen) {
-            screen = await prisma.screen.create({
-                data: {
-                    deviceId: device_id,
-                    name: `New Screen (${device_id.slice(-4)})`,
-                    status: 'online',
-                    lastSeen: new Date()
-                }
-            });
-            logger.info({ deviceId: device_id }, 'Auto-registered new screen');
-        }
-
-        const activePlaylist = await getActivePlaylist(screen, local_time, local_day);
-        
-        if (!activePlaylist) {
-            return res.json({
-                id: "fallback",
-                name: "No Content",
-                items: [{
-                    id: "f1",
-                    media: { name: "No Content", type: "image", url: "https://placehold.co/1920x1080?text=No+Content" },
-                    duration: 10
-                }]
-            });
-        }
-        res.json(activePlaylist);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
+// End of server logic
 app.get('/health', (req, res) => res.json({ status: "ok" }));
 
 const PORT = process.env.PORT || 8000;
