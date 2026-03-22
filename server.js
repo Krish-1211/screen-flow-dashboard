@@ -273,19 +273,27 @@ app.get('/screens/player', async (req, res) => {
 
         const activePlaylist = await getActivePlaylist(screen);
         
-        // Empty Playlist Handling (Phase 8 edge case)
         if (!activePlaylist || !activePlaylist.items || activePlaylist.items.length === 0) {
             return res.json({
-                playlist: {
-                    id: "fallback",
-                    items: [
-                        { type: "image", url: "https://via.placeholder.com/1920x1080?text=No+Content", duration: 10 }
-                    ]
-                }
+                id: "fallback",
+                name: "No Content",
+                items: [
+                    { 
+                        id: "fallback-item",
+                        mediaId: "none",
+                        media: { 
+                            name: "No Content Assigned",
+                            type: "image", 
+                            url: "https://via.placeholder.com/1920x1080?text=No+Content+Assigned" 
+                        },
+                        duration: 10,
+                        order: 0
+                    }
+                ]
             });
         }
 
-        res.json({ playlist: activePlaylist });
+        res.json(activePlaylist);
     } catch (e) {
         logger.error({ err: e }, 'Player Config Error');
         res.status(500).json({ error: "Internal error" });
