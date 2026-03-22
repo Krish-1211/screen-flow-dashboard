@@ -11,6 +11,7 @@ import fs from 'fs';
 import path from 'path';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+logger.info('Starting Screen-Flow API [SQLite Mode]');
 const prisma = new PrismaClient();
 const app = express();
 const httpServer = http.createServer(app);
