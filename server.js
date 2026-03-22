@@ -7,6 +7,8 @@ import pino from 'pino';
 import { pinoHttp } from 'pino-http';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const prisma = new PrismaClient();
@@ -214,18 +216,89 @@ app.post('/screens/heartbeat', async (req, res) => {
 });
 
 // PHASE 4: MEDIA & PLAYLISTS API
+// Provide a local directory for uploads (Note: Ephemeral on Render)
+const uploadsDir = 'public/uploads';
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+app.use('/uploads', express.static(uploadsDir));
+
 app.get('/media', async (req, res) => {
-    const media = await prisma.media.findMany();
+    const media = await prisma.media.findMany({
+        orderBy: { createdAt: 'desc' }
+    });
     res.json(media.map(m => enrichMedia(m)));
 });
 
-app.post('/media', upload.single('file'), async (req, res) => {
-    res.status(501).json({ error: "Use Cloud Storage or existing URLs" });
+app.post('/media/upload', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+        
+        const fileName = `${Date.now()}-${req.file.originalname}`;
+        const filePath = path.join(uploadsDir, fileName);
+        
+        // Save file locally (Ephemeral on Render, but works for now)
+        fs.writeFileSync(filePath, req.file.buffer);
+
+        const host = req.get('host');
+        const url = `${req.protocol}://${host}/uploads/${fileName}`;
+        
+        const media = await prisma.media.create({
+            data: {
+                name: req.body.name || req.file.originalname,
+                type: req.file.mimetype.startsWith('video') ? 'video' : 'image',
+                url: url,
+                duration: 10 // default
+            }
+        });
+
+        io.emit('playlist-updated');
+        res.json(enrichMedia(media));
+    } catch (e) {
+        logger.error({ err: e }, 'Upload Error');
+        res.status(500).json({ error: "Failed to upload file" });
+    }
+});
+
+app.post('/media/youtube', async (req, res) => {
+    try {
+        const { url, name } = req.body;
+        const media = await prisma.media.create({
+            data: {
+                name: name || "YouTube Video",
+                type: 'youtube',
+                url: url,
+                duration: 300 // default 5m for youtube
+            }
+        });
+        io.emit('playlist-updated');
+        res.json(enrichMedia(media));
+    } catch (e) {
+        res.status(500).json({ error: "Failed to add YouTube video" });
+    }
+});
+
+app.patch('/media/:id/rename', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const media = await prisma.media.update({
+            where: { id: req.params.id },
+            data: { name }
+        });
+        res.json(enrichMedia(media));
+    } catch (e) {
+        res.status(500).json({ error: "Failed to rename media" });
+    }
 });
 
 app.delete('/media/:id', async (req, res) => {
-    await prisma.media.delete({ where: { id: req.params.id } });
-    res.status(204).send();
+    try {
+        await prisma.media.delete({ where: { id: req.params.id } });
+        res.status(204).send();
+    } catch (e) {
+        res.status(500).json({ error: "Failed to delete media" });
+    }
 });
 
 app.get('/playlists', async (req, res) => {
