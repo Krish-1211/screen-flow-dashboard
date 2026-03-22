@@ -75,7 +75,10 @@ export default function DisplayPlayerPage() {
       // Get local context to help server with scheduling
       const now = new Date();
       const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const localDay = now.getDay();
+      
+      // JS getDay() is 0=Sun, 1=Mon. Dashboard days are 0=Mon, 6=Sun. Need to convert.
+      const jsDay = now.getDay();
+      const localDay = jsDay === 0 ? 6 : jsDay - 1;
       
       const data = await screensApi.getPlayerConfig(deviceId, localTime, localDay);
       

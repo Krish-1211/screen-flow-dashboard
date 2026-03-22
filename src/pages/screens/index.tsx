@@ -243,8 +243,7 @@ export default function ScreensPage() {
                         />
                       </th>
                       <th className="text-left p-4 font-semibold">Screen Name</th>
-                      <th className="text-left p-4 font-semibold">Status</th>
-                      <th className="text-left p-4 font-semibold">Active Playlist</th>
+                      <th className="text-left p-4 font-semibold">Default Playlist</th>
                       <th className="text-left p-4 font-semibold">Last Ping</th>
                       <th className="text-right p-4 font-semibold">Actions</th>
                     </tr>
@@ -267,17 +266,21 @@ export default function ScreensPage() {
                           <div className="flex flex-col group/name cursor-pointer" onClick={() => { setSelectedScreen(s); setDetailOpen(true); }}>
                             <div className="flex items-center gap-2">
                               <span className="text-foreground font-medium group-hover/name:text-primary transition-colors">{s.name}</span>
-                              {s.schedule_count > 0 && (
+                              {s.is_scheduled && (
                                 <div className="flex items-center gap-1 bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 rounded-full border border-primary/20">
                                   <Calendar className="h-2.5 w-2.5" />
-                                  <span>{s.schedule_count}</span>
+                                  <span>Scheduled</span>
                                 </div>
                               )}
                             </div>
-                            <span className="text-[10px] text-muted-foreground font-mono mt-0.5">{s.id}</span>
+                            <div className="flex items-center gap-1 mt-1">
+                              <span className="text-[10px] text-muted-foreground">Now:</span>
+                              <span className="text-[10px] font-medium text-primary uppercase tracking-wider">{s.active_playlist_name || "None"}</span>
+                            </div>
                           </div>
                         </td>
                         <td className="p-4"><StatusBadge status={s.status} /></td>
+
                         <td className="p-4">
                           <Select
                             value={s.playlistId || "none"}
