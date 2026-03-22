@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, MoreHorizontal, RefreshCw, Monitor, CheckCircle2, X, Calendar, Copy, QrCode, MapPin, Trash2 } from "lucide-react";
+import { Plus, MoreHorizontal, RefreshCw, Monitor, CheckCircle2, X, Calendar, Copy, QrCode, MapPin, Trash2, Search, Filter } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -48,7 +48,9 @@ export default function ScreensPage() {
   const [qrOpen, setQrOpen] = useState(false);
   const [qrScreen, setQrScreen] = useState<any>(null);
   
-  // Group state
+  // Filtering state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [activeGroupId, setActiveGroupId] = useState<string>("all");
   const [newGroupName, setNewGroupName] = useState("");
   const [groupsOpen, setGroupsOpen] = useState(false);
@@ -87,9 +89,13 @@ export default function ScreensPage() {
     }
   });
 
-  const filteredScreens = activeGroupId === "all" 
-    ? screens 
-    : screens.filter((s: any) => s.groupId === activeGroupId);
+  const filteredScreens = screens.filter((s: any) => {
+    const matchesGroup = activeGroupId === "all" || s.groupId === activeGroupId;
+    const matchesStatus = statusFilter === "all" || s.status === statusFilter;
+    const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                         (s.device_id && s.device_id.toLowerCase().includes(searchTerm.toLowerCase()));
+    return matchesGroup && matchesStatus && matchesSearch;
+  });
 
   const createMutation = useMutation({
     mutationFn: (payload: { name: string, playlist_id?: number }) => screensApi.create(payload),
@@ -273,26 +279,55 @@ export default function ScreensPage() {
         </div>
 
         {/* Group Filter Bar */}
-        <div className="flex flex-wrap gap-2 pb-2">
-          <Button 
-            variant={activeGroupId === "all" ? "default" : "outline"} 
-            size="sm"
-            onClick={() => setActiveGroupId("all")}
-            className="rounded-full"
-          >
-            All Screens ({screens.length})
-          </Button>
-          {groups.map((g: any) => (
+        <div className="flex flex-wrap items-center gap-3 bg-secondary/20 p-2 rounded-xl border border-border/50">
+          <div className="flex-1 min-w-[200px] relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input 
+              placeholder="Search by name or device ID..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-secondary border-none pl-10 h-9 rounded-lg"
+            />
+          </div>
+          
+          <div className="h-6 w-[1px] bg-border/50 hidden md:block" />
+
+          <div className="flex flex-wrap gap-2">
             <Button 
-              key={g.id}
-              variant={activeGroupId === g.id ? "default" : "outline"} 
+              variant={activeGroupId === "all" ? "default" : "ghost"} 
               size="sm"
-              onClick={() => setActiveGroupId(g.id)}
-              className="rounded-full"
+              onClick={() => setActiveGroupId("all")}
+              className="rounded-lg px-3 h-9"
             >
-              {g.name} ({g.screen_count || 0})
+              All Locations ({screens.length})
             </Button>
-          ))}
+            {groups.map((g: any) => (
+              <Button 
+                key={g.id}
+                variant={activeGroupId === g.id ? "default" : "ghost"} 
+                size="sm"
+                onClick={() => setActiveGroupId(g.id)}
+                className="rounded-lg px-3 h-9"
+              >
+                <MapPin className="h-3 w-3 mr-2 opacity-70" />
+                {g.name}
+              </Button>
+            ))}
+          </div>
+
+          <div className="h-6 w-[1px] bg-border/50 hidden md:block" />
+
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[120px] h-9 bg-secondary border-none rounded-lg text-xs">
+              <Filter className="h-3 w-3 mr-2 opacity-70" />
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="online text-green-500">Online</SelectItem>
+              <SelectItem value="offline text-red-500">Offline</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         <Dialog open={groupsOpen} onOpenChange={setGroupsOpen}>
@@ -385,6 +420,12 @@ export default function ScreensPage() {
                           <div className="flex flex-col group/name cursor-pointer" onClick={() => { setSelectedScreen(s); setDetailOpen(true); }}>
                             <div className="flex items-center gap-2">
                               <span className="text-foreground font-medium group-hover/name:text-primary transition-colors">{s.name}</span>
+                              {s.groupId && s.group_name && (
+                                <div className="flex items-center gap-1 bg-secondary text-muted-foreground text-[10px] px-1.5 py-0.5 rounded-md border border-border">
+                                  <MapPin className="h-2.5 w-2.5" />
+                                  <span>{s.group_name}</span>
+                                </div>
+                              )}
                               {s.is_scheduled && (
                                 <div className="flex items-center gap-1 bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 rounded-full border border-primary/20">
                                   <Calendar className="h-2.5 w-2.5" />
@@ -392,8 +433,9 @@ export default function ScreensPage() {
                                 </div>
                               )}
                             </div>
-                          <div className="flex items-center gap-1 mt-1">
+                          <div className="flex items-center justify-between mt-1">
                             <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Now: {s.active_playlist_name || "None"}</span>
+                            <span className="text-[10px] text-muted-foreground/50 font-mono">{s.device_id}</span>
                           </div>
                         </div>
                         </td>

@@ -31,11 +31,16 @@ app.use(pinoHttp({ logger }));
 // PHASE 1: HELPERS & DATA ENRICHMENT
 function enrichMedia(media) {
     if (!media) return null;
+    // Force HTTPS on all media URLs to prevent mixed-content browser errors
+    let url = media.url;
+    if (url && url.startsWith('http://')) {
+        url = url.replace('http://', 'https://');
+    }
     return {
         id: media.id,
         name: media.name,
         type: media.type,
-        url: media.url,
+        url,
         duration: media.duration || 10,
         createdAt: media.createdAt
     };
@@ -346,7 +351,8 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
         fs.writeFileSync(filePath, req.file.buffer);
 
         const host = req.get('host');
-        const url = `${req.protocol}://${host}/uploads/${fileName}`;
+        const protocol = req.get('x-forwarded-proto') || req.protocol;
+        const url = `${protocol}://${host}/uploads/${fileName}`;
         
         const media = await prisma.media.create({
             data: {
