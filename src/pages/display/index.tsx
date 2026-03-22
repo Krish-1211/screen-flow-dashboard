@@ -105,7 +105,7 @@ export default function DisplayPlayerPage() {
       return;
     }
     loadPlaylist(true);
-    const pollInterval = setInterval(() => loadPlaylist(false), 30000);
+    const pollInterval = setInterval(() => loadPlaylist(false), 10000);
 
     const handleOnline = () => setConnected(true);
     const handleOffline = () => setConnected(false);
