@@ -332,14 +332,17 @@ export default function ScreensPage() {
                       <div className="flex flex-col cursor-pointer" onClick={() => { setSelectedScreen(s); setDetailOpen(true); }}>
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-foreground">{s.name}</span>
-                          {s.schedule_count > 0 && (
+                          {s.is_scheduled && (
                             <div className="flex items-center gap-1 bg-primary/10 text-primary text-[10px] px-1.5 py-0.5 rounded-full border border-primary/20">
                               <Calendar className="h-2.5 w-2.5" />
-                              <span>{s.schedule_count}</span>
+                              <span>Scheduled</span>
                             </div>
                           )}
                         </div>
-                        <span className="text-[10px] font-mono text-muted-foreground">{s.id}</span>
+                        <div className="flex items-center gap-1 mt-1">
+                          <span className="text-[10px] text-muted-foreground">Now:</span>
+                          <span className="text-[10px] font-medium text-primary uppercase tracking-wider">{s.active_playlist_name || "None"}</span>
+                        </div>
                       </div>
                       <StatusBadge status={s.status} />
                     </div>

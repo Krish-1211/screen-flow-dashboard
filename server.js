@@ -95,18 +95,37 @@ async function getActivePlaylist(screen, clientTime = null, clientDay = null) {
             days = String(sch.daysOfWeek).split(',').map(n => parseInt(n.trim(), 10)); 
         }
 
-        if (!days.includes(currentWeekday)) return false;
-        if (currentTime < sch.startTime || currentTime > sch.endTime) return false;
-        return true;
+        const dayMatch = days.includes(currentWeekday);
+        const timeMatch = currentTime >= sch.startTime && currentTime <= sch.endTime;
+
+        logger.info({ 
+            scheduleId: sch.id, 
+            dayMatch, 
+            timeMatch, 
+            currentTime, 
+            currentWeekday,
+            schDays: days,
+            schStart: sch.startTime,
+            schEnd: sch.endTime
+        }, 'Evaluating schedule');
+
+        return dayMatch && timeMatch;
     });
 
     if (validSchedules.length > 0) {
+        // Use the one with the latest creation or specific screen assignment
         const activeSchedule = validSchedules[0];
         const playlist = await prisma.playlist.findUnique({
             where: { id: activeSchedule.playlistId },
             include: { items: true }
         });
-        if (playlist) return await enrichPlaylistData(playlist);
+        
+        if (playlist) {
+            logger.info({ playlistName: playlist.name }, 'Active schedule found');
+            return await enrichPlaylistData(playlist);
+        } else {
+            logger.warn({ playlistId: activeSchedule.playlistId }, 'Schedule points to missing playlist');
+        }
     }
 
     // Default Fallback
