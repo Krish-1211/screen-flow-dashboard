@@ -1,5 +1,7 @@
 import express from 'express';
 import { createServer } from 'http';
+import fs from 'fs';
+
 import { Server } from 'socket.io';
 import cors from 'cors';
 import 'dotenv/config';
@@ -23,6 +25,14 @@ const __dirname = path.dirname(__filename);
 
 const prisma = new PrismaClient();
 const app = express();
+
+// Ensure media/uploads directory exists for multer
+const uploadsDir = path.join(__dirname, 'media/uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    logger.info({ path: uploadsDir }, 'Created uploads directory');
+}
+
 
 const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "*").split(',').map(o => o.trim());
 
@@ -317,7 +327,14 @@ app.post(['/media/upload', '/media/upload/'], upload.single('file'), async (req,
             }
         });
         res.json(newMedia);
-    } catch (e) { res.status(500).json({ error: "Upload failed" }); }
+    } catch (e) { 
+        logger.error({ err: e }, 'Media Upload Error');
+        res.status(500).json({ 
+            error: "Upload failed", 
+            details: e.message,
+            stack: process.env.NODE_ENV === 'development' ? e.stack : undefined 
+        }); 
+    }
 });
 app.get('/media', async (req, res) => {
     const media = await prisma.media.findMany();
