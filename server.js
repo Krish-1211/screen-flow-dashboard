@@ -171,7 +171,9 @@ app.post('/auth/token', upload.none(), (req, res) => {
 
 app.get(['/screens', '/screens/'], async (req, res) => {
     try {
-        const screens = await prisma.screen.findMany();
+        const screens = await prisma.screen.findMany({
+            include: { group: true }
+        });
         const mapped = await Promise.all(screens.map(async s => {
             const active = await getActivePlaylist(s);
             return {
@@ -181,6 +183,8 @@ app.get(['/screens', '/screens/'], async (req, res) => {
                 lastPing: s.lastSeen,
                 playlistId: s.currentPlaylistId,
                 device_id: s.deviceId,
+                groupId: s.groupId,
+                group_name: s.group ? s.group.name : "Unassigned",
                 active_playlist_name: active ? active.name : "None",
                 is_scheduled: active && active.id !== s.currentPlaylistId
             };
@@ -189,6 +193,32 @@ app.get(['/screens', '/screens/'], async (req, res) => {
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
+});
+
+// PHASE 3.5: GROUPS API
+app.get('/groups', async (req, res) => {
+    const groups = await prisma.group.findMany({
+        include: { _count: { select: { screens: true } } }
+    });
+    res.json(groups.map(g => ({
+        ...g,
+        screen_count: g._count.screens
+    })));
+});
+
+app.post('/groups', async (req, res) => {
+    const { name } = req.body;
+    try {
+        const group = await prisma.group.create({ data: { name } });
+        res.json(group);
+    } catch (e) {
+        res.status(400).json({ error: "Group already exists or invalid name" });
+    }
+});
+
+app.delete('/groups/:id', async (req, res) => {
+    await prisma.group.delete({ where: { id: req.params.id } });
+    res.status(204).send();
 });
 
 // PHASE 6: PLAYER API
@@ -261,13 +291,14 @@ app.put('/screens/bulk', async (req, res) => {
 });
 
 app.put('/screens/:id', async (req, res) => {
-    const { name, playlist_id, status } = req.body;
+    const { name, playlist_id, status, groupId } = req.body;
     const s = await prisma.screen.update({
         where: { id: req.params.id },
         data: { 
             name, 
             currentPlaylistId: playlist_id,
-            status: status || undefined
+            status: status || undefined,
+            groupId: groupId === "null" ? null : (groupId || undefined)
         }
     });
     io.emit('playlist-updated');

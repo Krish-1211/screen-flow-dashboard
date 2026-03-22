@@ -4,6 +4,12 @@ export interface User {
     email: string;
 }
 
+export interface Group {
+    id: string;
+    name: string;
+    screen_count: number;
+}
+
 export interface Screen {
     id: number | string;
     name: string;
@@ -11,6 +17,8 @@ export interface Screen {
     playlistId?: number;
     lastPing?: string;
     device_id?: string;
+    groupId?: string;
+    group_name?: string;
 }
 
 export interface Media {

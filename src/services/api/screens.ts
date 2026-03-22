@@ -10,7 +10,9 @@ export const screensApi = {
             status: s.status,
             playlistId: s.playlistId,
             lastPing: s.lastPing,
-            device_id: s.device_id
+            device_id: s.device_id,
+            groupId: s.groupId,
+            group_name: s.group_name
         })) as Screen[];
     },
     getById: async (id: string | number): Promise<Screen> => {
@@ -41,6 +43,7 @@ export const screensApi = {
         const updatePayload: any = {};
         if (payload.name !== undefined) updatePayload.name = payload.name;
         if (payload.playlistId !== undefined) updatePayload.playlist_id = payload.playlistId;
+        if (payload.groupId !== undefined) updatePayload.groupId = payload.groupId;
 
         const response = await api.put(`/screens/${id}`, updatePayload);
         const s = response.data;
