@@ -385,35 +385,93 @@ app.get('/playlists/:id', async (req, res) => {
 });
 app.post('/playlists', async (req, res) => {
     try {
+        const { name, items } = req.body;
+        logger.info({ name, itemsCount: items?.length }, 'Creating playlist');
+
         const newPl = await prisma.playlist.create({
-            data: { name: req.body.name || 'New Playlist' }
+            data: { name: name || 'New Playlist' }
         });
-        if (req.body.items && req.body.items.length > 0) {
-            const items = req.body.items.map((item, i) => ({
-                playlistId: newPl.id, mediaId: item.mediaId, order: i, duration: item.duration || null
-            }));
-            await prisma.playlistItem.createMany({ data: items });
+
+        if (items && items.length > 0) {
+            const itemsToCreate = items.map((item, i) => {
+                const mediaId = item.mediaId || item.media_id;
+                const order = item.order !== undefined ? item.order : (item.position !== undefined ? item.position : i);
+                const duration = item.duration || null;
+
+                if (!mediaId) {
+                    logger.warn({ item, index: i }, 'Create Playlist: Missing mediaId');
+                    throw new Error(`Item at index ${i} is missing mediaId`);
+                }
+
+                return {
+                    playlistId: newPl.id,
+                    mediaId: String(mediaId),
+                    order: order,
+                    duration: duration
+                };
+            });
+
+            await prisma.playlistItem.createMany({ data: itemsToCreate });
         }
         res.json(newPl);
-    } catch (e) { res.status(500).json({ error: "Failed to create playlist" }); }
+    } catch (e) {
+        logger.error({ err: e }, 'Playlist Creation Error');
+        res.status(500).json({ error: "Failed to create playlist", details: e.message });
+    }
 });
 app.put('/playlists/:id', async (req, res) => {
     try {
+        const { id } = req.params;
+        const { name, items } = req.body;
+
+        logger.info({ id, name, itemsCount: items?.length }, 'Updating playlist');
+
+        // 1. Update the playlist name if provided
         const updated = await prisma.playlist.update({
-            where: { id: req.params.id },
-            data: { name: req.body.name }
+            where: { id },
+            data: { name: name }
         });
-        if (req.body.items) {
-            await prisma.playlistItem.deleteMany({ where: { playlistId: updated.id } });
-            const items = req.body.items.map((item, i) => ({
-                playlistId: updated.id, mediaId: item.mediaId, order: i, duration: item.duration || null
-            }));
-            await prisma.playlistItem.createMany({ data: items });
+
+        // 2. Update items if provided
+        if (items) {
+            // Delete existing items
+            await prisma.playlistItem.deleteMany({ where: { playlistId: id } });
+
+            // Create new items with flexible key mapping (handle both CamelCase and snake_case)
+            const itemsToCreate = items.map((item, i) => {
+                const mediaId = item.mediaId || item.media_id;
+                const order = item.order !== undefined ? item.order : (item.position !== undefined ? item.position : i);
+                const duration = item.duration || null;
+
+                if (!mediaId) {
+                    logger.warn({ item, index: i }, 'PlaylistItem missing mediaId');
+                    throw new Error(`Item at index ${i} is missing mediaId`);
+                }
+
+                return {
+                    playlistId: id,
+                    mediaId: String(mediaId),
+                    order: order,
+                    duration: duration
+                };
+            });
+
+            if (itemsToCreate.length > 0) {
+                await prisma.playlistItem.createMany({ data: itemsToCreate });
+            }
         }
+
         io.emit('playlist-updated');
         res.json(updated);
-    } catch (e) { res.status(404).json({ error: "Not found" }); }
+    } catch (e) {
+        logger.error({ err: e, id: req.params.id }, 'Playlist Update Error');
+        if (e.code === 'P2025') {
+            return res.status(404).json({ error: "Playlist record not found", details: e.message });
+        }
+        res.status(500).json({ error: "Internal Server Error during playlist update", details: e.message });
+    }
 });
+
 app.delete('/playlists/:id', async (req, res) => {
     await prisma.playlistItem.deleteMany({ where: { playlistId: req.params.id } }).catch(() => {});
     await prisma.playlist.delete({ where: { id: req.params.id } }).catch(() => {});

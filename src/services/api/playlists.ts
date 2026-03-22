@@ -32,9 +32,9 @@ export const playlistsApi = {
         const response = await api.post('/playlists/', {
             name: payload.name || 'New Playlist',
             items: payload.items?.map((item, index) => ({
-                media_id: String(item.mediaId),
+                mediaId: String(item.mediaId),
                 duration: item.duration,
-                position: item.order ?? index
+                order: item.order ?? index
             })) || []
         });
         return mapPlaylist(response.data);
@@ -44,11 +44,12 @@ export const playlistsApi = {
         if (payload.name !== undefined) updatePayload.name = payload.name;
         if (payload.items !== undefined) {
             updatePayload.items = payload.items.map((item, index) => ({
-                media_id: String(item.mediaId),
+                mediaId: String(item.mediaId),
                 duration: item.duration,
-                position: item.order ?? index
+                order: item.order ?? index
             }));
         }
+
 
         const response = await api.put(`/playlists/${id}`, updatePayload);
         return mapPlaylist(response.data);
