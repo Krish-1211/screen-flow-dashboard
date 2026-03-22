@@ -242,9 +242,8 @@ export default function DisplayPlayerPage() {
             <video
               key={currentItem.id} // force re-mount for new source
               src={mediaUrl}
-              className="w-full h-full object-contain animate-in fade-in duration-1000"
+              className="w-full h-full object-cover animate-in fade-in duration-1000"
               autoPlay
-              muted
               playsInline
               crossOrigin="anonymous"
               onError={handleMediaError}
@@ -254,7 +253,7 @@ export default function DisplayPlayerPage() {
             <img
               key={currentItem.id}
               src={mediaUrl}
-              className="w-full h-full object-contain animate-in fade-in duration-1000"
+              className="w-full h-full object-cover animate-in fade-in duration-1000"
               alt="Signage Content"
               crossOrigin="anonymous"
               onError={handleMediaError}
