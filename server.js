@@ -627,6 +627,82 @@ io.on('connection', (socket) => {
     });
 });
 
+// Schedules
+app.get(['/schedules', '/schedules/'], async (req, res) => {
+    try {
+        const { screen_id } = req.query;
+        const where = screen_id ? { screenId: screen_id } : {};
+        const schedules = await prisma.schedule.findMany({ where });
+        
+        // Map back to frontend expected keys
+        const formatted = schedules.map(s => ({
+            id: s.id,
+            screen_id: s.screenId,
+            playlist_id: s.playlistId,
+            days_of_week: JSON.parse(s.daysOfWeek),
+            start_time: s.startTime,
+            end_time: s.endTime,
+            active: true // default
+        }));
+        res.json(formatted);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch schedules" });
+    }
+});
+
+app.post(['/schedules', '/schedules/'], async (req, res) => {
+    try {
+        const { screen_id, playlist_id, days_of_week, start_time, end_time } = req.body;
+        const schedule = await prisma.schedule.create({
+            data: {
+                screenId: screen_id,
+                playlistId: playlist_id,
+                daysOfWeek: JSON.stringify(days_of_week || []),
+                startTime: start_time,
+                endTime: end_time
+            }
+        });
+        io.emit('playlist-updated'); // trigger refresh on screens
+        res.json(schedule);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to create schedule" });
+    }
+});
+
+app.put(['/schedules/:id', '/schedules/:id/'], async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { screen_id, playlist_id, days_of_week, start_time, end_time } = req.body;
+        const schedule = await prisma.schedule.update({
+            where: { id },
+            data: {
+                screenId: screen_id,
+                playlistId: playlist_id,
+                daysOfWeek: days_of_week ? JSON.stringify(days_of_week) : undefined,
+                startTime: start_time,
+                endTime: end_time
+            }
+        });
+        io.emit('playlist-updated');
+        res.json(schedule);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to update schedule" });
+    }
+});
+
+app.delete(['/schedules/:id', '/schedules/:id/'], async (req, res) => {
+    try {
+        await prisma.schedule.delete({ where: { id: req.params.id } });
+        io.emit('playlist-updated');
+        res.status(204).send();
+    } catch (e) {
+        res.status(500).json({ error: "Failed to delete schedule" });
+    }
+});
+
+// Logs & Health
+app.get('/health', (req, res) => res.status(200).json({ status: "ok" }));
+
 const PORT = process.env.PORT || 8000; // Binding to 8000 ensures React frontend continues normally
 httpServer.listen(PORT, '0.0.0.0', () => {
     logger.info(`Backend WebSocket + API Server running natively with SQLite on port ${PORT}`);
