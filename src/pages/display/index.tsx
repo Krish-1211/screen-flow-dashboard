@@ -71,7 +71,13 @@ export default function DisplayPlayerPage() {
     if (!deviceId) return;
     try {
       if (isInitial) setLoading(true);
-      const data = await screensApi.getPlayerConfig(deviceId);
+      
+      // Get local context to help server with scheduling
+      const now = new Date();
+      const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const localDay = now.getDay();
+      
+      const data = await screensApi.getPlayerConfig(deviceId, localTime, localDay);
       
       if (data && data.items) {
         setPlaylist(data);

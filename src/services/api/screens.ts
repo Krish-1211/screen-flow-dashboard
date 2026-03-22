@@ -59,8 +59,11 @@ export const screensApi = {
     heartbeat: async (device_id: string): Promise<void> => {
         await api.post('/screens/heartbeat', { device_id });
     },
-    getPlayerConfig: async (device_id: string): Promise<any> => {
-        const response = await api.get(`/screens/player?device_id=${device_id}`);
+    getPlayerConfig: async (device_id: string, local_time?: string, local_day?: number): Promise<any> => {
+        let url = `/screens/player?device_id=${device_id}`;
+        if (local_time) url += `&local_time=${local_time}`;
+        if (local_day !== undefined) url += `&local_day=${local_day}`;
+        const response = await api.get(url);
         return response.data;
     },
     bulkUpdate: async (screen_ids: (string | number)[], playlist_id: string | number): Promise<{ updated: number, playlist_id: string }> => {

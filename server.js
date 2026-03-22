@@ -158,7 +158,7 @@ function enrichMedia(m) {
 }
 
 // PHASE 4: SCHEDULING ENGINE
-async function getActivePlaylist(screen) {
+async function getActivePlaylist(screen, clientTime = null, clientDay = null) {
     if (!screen) return null;
 
     // Fetch schedules for THIS screen OR generic/global schedules
@@ -172,15 +172,19 @@ async function getActivePlaylist(screen) {
         }
     });
 
-    // Use UTC for server comparisons or respect a potential offset (for now we log)
-    const now = new Date();
-    // We get current time in HH:mm format
-    const currentHour = String(now.getHours()).padStart(2, '0');
-    const currentMin = String(now.getMinutes()).padStart(2, '0');
-    const currentTime = `${currentHour}:${currentMin}`;
-    const currentWeekday = now.getDay(); // 0 is Sunday, 1 is Monday...
+    // Use Client Time if provided, otherwise Fallback to Server Time
+    let currentTime = clientTime;
+    let currentWeekday = clientDay !== null ? parseInt(clientDay) : null;
 
-    logger.debug({ screenId: screen.id, currentTime, currentWeekday, schedulesCount: schedules.length }, 'Checking active schedules');
+    if (!currentTime || currentWeekday === null) {
+        const now = new Date();
+        const currentHour = String(now.getHours()).padStart(2, '0');
+        const currentMin = String(now.getMinutes()).padStart(2, '0');
+        currentTime = currentTime || `${currentHour}:${currentMin}`;
+        currentWeekday = currentWeekday !== null ? currentWeekday : now.getDay();
+    }
+
+    logger.debug({ screenId: screen.id, currentTime, currentWeekday, source: clientTime ? 'client' : 'server' }, 'Checking active schedules');
 
     const validSchedules = schedules.filter(sch => {
         let days = [];
@@ -192,13 +196,11 @@ async function getActivePlaylist(screen) {
 
         // Check if today is matching
         if (!days.includes(currentWeekday)) {
-            logger.debug({ scheduleId: sch.id, days, currentWeekday }, 'Schedule day mismatch');
             return false;
         }
 
         // Time comparison
         if (currentTime < sch.startTime || currentTime > sch.endTime) {
-            logger.debug({ scheduleId: sch.id, startTime: sch.startTime, endTime: sch.endTime, currentTime }, 'Schedule time mismatch');
             return false;
         }
 
@@ -281,21 +283,17 @@ app.get(['/screens/', '/screens'], async (req, res) => {
 
 // PHASE 5: PLAYER CONFIG API
 app.get('/screens/player', async (req, res) => {
-    const deviceId = req.query.device_id;
-    if (!deviceId || typeof deviceId !== 'string') {
-        return res.status(400).json({ error: "device_id is required" });
-    }
-
     try {
+        const { device_id, local_time, local_day } = req.query;
+        if (!device_id) return res.status(400).json({ error: "device_id is required" });
+
         const screen = await prisma.screen.findUnique({
-            where: { deviceId: deviceId }
+            where: { deviceId: device_id }
         });
 
-        if (!screen) {
-            return res.status(404).json({ error: "Screen not found" });
-        }
+        if (!screen) return res.status(404).json({ error: "Screen not registered" });
 
-        const activePlaylist = await getActivePlaylist(screen);
+        const activePlaylist = await getActivePlaylist(screen, local_time, local_day);
         
         if (!activePlaylist || !activePlaylist.items || activePlaylist.items.length === 0) {
             return res.json({
