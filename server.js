@@ -1,18 +1,18 @@
-const express = require('express');
-const { PrismaClient } = require('@prisma/client');
-const cors = require('cors');
-const http = require('http');
-const socketIo = require('socket.io');
-const pino = require('pino');
-const pinoHttp = require('pino-http');
-const jwt = require('jsonwebtoken');
-const multer = require('multer');
+import express from 'express';
+import { PrismaClient } from '@prisma/client';
+import cors from 'cors';
+import http from 'http';
+import { Server } from 'socket.io';
+import pino from 'pino';
+import { pinoHttp } from 'pino-http';
+import jwt from 'jsonwebtoken';
+import multer from 'multer';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const prisma = new PrismaClient();
 const app = express();
 const httpServer = http.createServer(app);
-const io = socketIo(httpServer, {
+const io = new Server(httpServer, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
 const upload = multer();
@@ -37,7 +37,7 @@ function enrichMedia(media) {
 async function enrichPlaylistData(playlist) {
     if (!playlist || !playlist.items) return playlist;
     
-    // Fetch all media for the items in one go or individually
+    // Fetch all media for the items
     const itemsWithMedia = await Promise.all(playlist.items.map(async (item) => {
         const media = await prisma.media.findUnique({ where: { id: item.mediaId } });
         return {
@@ -95,7 +95,6 @@ async function getActivePlaylist(screen, clientTime = null, clientDay = null) {
     });
 
     if (validSchedules.length > 0) {
-        // Find the most recently created or priority schedule
         const activeSchedule = validSchedules[0];
         const playlist = await prisma.playlist.findUnique({
             where: { id: activeSchedule.playlistId },
@@ -217,8 +216,6 @@ app.get('/media', async (req, res) => {
 });
 
 app.post('/media', upload.single('file'), async (req, res) => {
-    // This is a mockup for local uploads if needed, 
-    // usually handled by frontend upload to a cloud storage
     res.status(501).json({ error: "Use Cloud Storage or existing URLs" });
 });
 
