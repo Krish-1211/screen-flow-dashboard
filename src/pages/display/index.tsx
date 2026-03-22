@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { WifiOff, AlertTriangle } from "lucide-react";
+import { WifiOff, AlertTriangle, Volume2, VolumeX } from "lucide-react";
 import { screensApi } from "@/services/api/screens";
 import type { Playlist } from "@/types";
 
@@ -13,10 +13,17 @@ export default function DisplayPlayerPage() {
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(true);
   const [mediaError, setMediaError] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [fadeState, setFadeState] = useState<'in' | 'out'>('in');
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pendingPlaylistRef = useRef<Playlist | null>(null);
+  const isVideoPlayingRef = useRef(false);
+  const preloadedNextRef = useRef<HTMLImageElement | HTMLVideoElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  // ── Disable right-click & scrollbar ──
   useEffect(() => {
     const handleContext = (e: Event) => e.preventDefault();
     document.addEventListener("contextmenu", handleContext);
@@ -28,18 +35,27 @@ export default function DisplayPlayerPage() {
     };
   }, []);
 
-  const preloadMedia = useCallback(async (pl: Playlist) => {
-    const fetchPromises = pl.items.map(item => {
-      if (item.media?.url && item.media.type !== 'youtube') {
-        return fetch(item.media.url)
-          .then(res => res.ok ? res : Promise.reject())
-          .catch(() => {});
-      }
-      return Promise.resolve();
-    });
-    await Promise.all(fetchPromises);
+  // ── Preload the NEXT item in background ──
+  const preloadNextItem = useCallback((pl: Playlist, idx: number) => {
+    if (!pl?.items?.length) return;
+    const nextIdx = (idx + 1) % pl.items.length;
+    const nextItem = pl.items[nextIdx];
+    if (!nextItem?.media?.url || nextItem.media.type === 'youtube') return;
+
+    if (nextItem.media.type === 'video') {
+      const vid = document.createElement('video');
+      vid.preload = 'auto';
+      vid.src = nextItem.media.url;
+      vid.load();
+      preloadedNextRef.current = vid;
+    } else {
+      const img = new Image();
+      img.src = nextItem.media.url;
+      preloadedNextRef.current = img;
+    }
   }, []);
 
+  // ── Heartbeat (unchanged) ──
   useEffect(() => {
     if (!deviceId) return;
     let interval: any;
@@ -67,26 +83,30 @@ export default function DisplayPlayerPage() {
     return () => clearInterval(interval);
   }, [deviceId]);
 
+  // ── Playlist loading (polls update a pending ref, never interrupts playback) ──
   const loadPlaylist = useCallback(async (isInitial = false) => {
     if (!deviceId) return;
     try {
       if (isInitial) setLoading(true);
       
-      // Get local context to help server with scheduling
       const now = new Date();
       const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      
-      // JS getDay() is 0=Sun, 1=Mon. Dashboard days are 0=Mon, 6=Sun. Need to convert.
       const jsDay = now.getDay();
       const localDay = jsDay === 0 ? 6 : jsDay - 1;
       
       const data = await screensApi.getPlayerConfig(deviceId, localTime, localDay);
       
       if (data && data.items) {
-        setPlaylist(data);
         localStorage.setItem(`offline-playlist-${deviceId}`, JSON.stringify(data));
-        preloadMedia(data);
-      } else {
+
+        if (isInitial) {
+          // First load — apply immediately
+          setPlaylist(data);
+        } else {
+          // Background poll — stage the update, apply after current item finishes
+          pendingPlaylistRef.current = data;
+        }
+      } else if (isInitial) {
         setPlaylist(null);
       }
     } catch (err) {
@@ -94,14 +114,15 @@ export default function DisplayPlayerPage() {
       const offline = localStorage.getItem(`offline-playlist-${deviceId}`);
       if (offline) {
         const pl = JSON.parse(offline);
-        setPlaylist(pl);
-        preloadMedia(pl);
+        if (isInitial) setPlaylist(pl);
+        else pendingPlaylistRef.current = pl;
       }
     } finally {
       if (isInitial) setLoading(false);
     }
-  }, [deviceId, preloadMedia]);
+  }, [deviceId]);
 
+  // ── Poll interval & online/offline (unchanged structure) ──
   useEffect(() => {
     if (!deviceId) {
       setLoading(false);
@@ -123,31 +144,74 @@ export default function DisplayPlayerPage() {
     };
   }, [loadPlaylist, deviceId]);
 
+  // ── Advance to next item with crossfade ──
   const advanceMedia = useCallback(() => {
     setMediaError(false);
-    if (!playlist?.items?.length) return;
-    setCurrentIndex((prev) => (prev + 1) % playlist.items.length);
+    isVideoPlayingRef.current = false;
+
+    // Fade out current item
+    setFadeState('out');
+
+    setTimeout(() => {
+      // If a new playlist arrived from a background poll, apply it now
+      if (pendingPlaylistRef.current) {
+        setPlaylist(pendingPlaylistRef.current);
+        pendingPlaylistRef.current = null;
+        setCurrentIndex(0);
+      } else if (playlist?.items?.length) {
+        setCurrentIndex((prev) => (prev + 1) % playlist.items.length);
+      }
+      // Fade in next item
+      setFadeState('in');
+    }, 200); // 200ms matches the CSS transition
   }, [playlist]);
 
+  // ── Timer logic: only for images and youtube, NOT for videos ──
   useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
+    if (timerRef.current) clearTimeout(timerRef.current);
     if (!playlist?.items?.length) return;
 
     const currentItem = playlist.items[currentIndex];
-    const duration = currentItem.duration || 10;
+    const mediaType = currentItem?.media?.type;
 
-    timerRef.current = setInterval(advanceMedia, duration * 1000);
+    if (mediaType === 'video') {
+      // Videos advance via onEnded — no timer needed
+      isVideoPlayingRef.current = true;
+      // Preload the next item while this video plays
+      preloadNextItem(playlist, currentIndex);
+      return;
+    }
+
+    // Images & YouTube use duration-based timer
+    const duration = currentItem.duration || 10;
+    
+    // Preload next item during this item's display
+    preloadNextItem(playlist, currentIndex);
+
+    timerRef.current = setTimeout(advanceMedia, duration * 1000);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [currentIndex, playlist, advanceMedia]);
+  }, [currentIndex, playlist, advanceMedia, preloadNextItem]);
 
-  const handleMediaError = (e: any) => {
+  // ── Error handler ──
+  const handleMediaError = () => {
     setMediaError(true);
     setTimeout(advanceMedia, 5000);
   };
 
+  // ── Mute toggle (applies to active video element live) ──
+  const toggleMute = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger fullscreen
+    setMuted(prev => {
+      const next = !prev;
+      if (videoRef.current) videoRef.current.muted = next;
+      return next;
+    });
+  }, []);
+
+  // ── Early returns for loading / error states (unchanged) ──
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
@@ -209,7 +273,13 @@ export default function DisplayPlayerPage() {
           <p className="text-gray-400">Skipping in 5s...</p>
         </div>
       ) : (
-        <div className="absolute inset-0">
+        <div 
+          className="absolute inset-0"
+          style={{
+            opacity: fadeState === 'in' ? 1 : 0,
+            transition: 'opacity 200ms ease'
+          }}
+        >
           {isYoutube ? (
             <iframe
               key={currentItem.id}
@@ -221,10 +291,12 @@ export default function DisplayPlayerPage() {
           ) : isVideo ? (
             <video
               key={currentItem.id}
+              ref={videoRef}
               src={mediaUrl}
               className="w-full h-full object-contain"
               autoPlay
               playsInline
+              muted={muted}
               onError={handleMediaError}
               onEnded={advanceMedia}
             />
@@ -238,6 +310,20 @@ export default function DisplayPlayerPage() {
             />
           )}
         </div>
+      )}
+
+      {/* Mute / Unmute Toggle */}
+      {(isVideo || isYoutube) && !mediaError && (
+        <button
+          onClick={toggleMute}
+          className="absolute bottom-4 right-4 z-50 bg-black/50 backdrop-blur-sm rounded-full p-2.5 
+                     text-white/70 hover:text-white hover:bg-black/70 transition-all duration-200
+                     opacity-0 hover:opacity-100 focus:opacity-100"
+          style={{ opacity: undefined }} // Let CSS handle it, show on hover via group
+          title={muted ? "Unmute" : "Mute"}
+        >
+          {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+        </button>
       )}
 
       {!connected && (
