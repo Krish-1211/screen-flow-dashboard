@@ -5,17 +5,17 @@ const mapPlaylist = (pl: any): Playlist => ({
     ...pl,
     items: pl.items?.map((item: any) => ({
         id: item.id,
-        mediaId: String(item.media_id),
+        mediaId: String(item.mediaId),
         media: item.media ? {
             id: String(item.media.id),
             name: item.media.name,
             type: item.media.type,
             url: item.media.url,
             duration: item.media.duration,
-            thumbnail: item.media.thumbnail
+            thumbnail: item.media.url // fallback for now
         } : undefined,
         duration: item.duration,
-        order: item.position
+        order: item.order
     })) || []
 });
 

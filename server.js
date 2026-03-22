@@ -110,36 +110,35 @@ setInterval(async () => {
 
 // PHASE 8: Populate Media
 async function enrichPlaylistData(playlist) {
-    if (!playlist) return null;
+    if (!playlist || !playlist.items) return playlist;
+    
     const mediaIds = playlist.items.map(item => item.mediaId);
     
     // Fetch related media
     const mediaRefs = await prisma.media.findMany({
-        where: { id: { in: mediaIds } }
+        where: { id: { in: mediaIds.filter(Boolean) } }
     });
     
     // Normalize order automatically and skip missing media
-    playlist.items.sort((a, b) => a.order - b.order);
+    const sortedItems = [...playlist.items].sort((a, b) => (a.order || 0) - (b.order || 0));
     
-    const enrichedItems = playlist.items.reduce((acc, item) => {
+    const enrichedItems = sortedItems.map(item => {
         const media = mediaRefs.find(m => m.id === item.mediaId);
-        if (media) { // if missing -> skip item
+        if (media) {
             const enrichedMedia = enrichMedia(media);
-            acc.push({
-                mediaId: item.mediaId,
+            return {
+                ...item,
+                media: enrichedMedia,
+                // Add flat fields for backward compatibility or simple usage
                 type: media.type,
-                url: enrichedMedia.url,
-                duration: item.duration || media.duration || 10,
-                order: acc.length // Normalize order
-            });
+                url: enrichedMedia.url
+            };
         }
-        return acc;
-    }, []);
+        return item;
+    });
 
-    return {
-        id: playlist.id,
-        items: enrichedItems
-    };
+    playlist.items = enrichedItems;
+    return playlist;
 }
 
 // Helper to absolute-ize media URLs for the frontend
