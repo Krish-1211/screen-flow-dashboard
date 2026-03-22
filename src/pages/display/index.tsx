@@ -236,7 +236,7 @@ export default function DisplayPlayerPage() {
             <video
               key={currentItem.id}
               src={mediaUrl}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               autoPlay
               playsInline
               onError={handleMediaError}
@@ -246,7 +246,7 @@ export default function DisplayPlayerPage() {
             <img
               key={currentItem.id}
               src={mediaUrl}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain"
               alt="Content"
               onError={handleMediaError}
             />
