@@ -84,7 +84,10 @@ async function getActivePlaylist(screen, clientTime = null, clientDay = null) {
         const currentHour = String(now.getHours()).padStart(2, '0');
         const currentMin = String(now.getMinutes()).padStart(2, '0');
         currentTime = currentTime || `${currentHour}:${currentMin}`;
-        currentWeekday = currentWeekday !== null ? currentWeekday : now.getDay();
+        
+        // Map JS 0=Sun to Dashboard 6=Sun
+        const jsDay = now.getDay();
+        currentWeekday = currentWeekday !== null ? currentWeekday : (jsDay === 0 ? 6 : jsDay - 1);
     }
 
     const validSchedules = schedules.filter(sch => {
@@ -96,7 +99,18 @@ async function getActivePlaylist(screen, clientTime = null, clientDay = null) {
         }
 
         const dayMatch = days.includes(currentWeekday);
-        const timeMatch = currentTime >= sch.startTime && currentTime <= sch.endTime;
+        
+        // 1 minute buffer so schedules trigger right on time during player polling cycle
+        let schStartH = parseInt(sch.startTime.split(':')[0], 10);
+        let schStartM = parseInt(sch.startTime.split(':')[1], 10);
+        schStartM -= 1;
+        if (schStartM < 0) {
+            schStartM = 59;
+            schStartH -= 1;
+        }
+        const effectiveStartTime = `${String(schStartH).padStart(2, '0')}:${String(schStartM).padStart(2, '0')}`;
+        
+        const timeMatch = currentTime >= effectiveStartTime && currentTime <= sch.endTime;
 
         logger.info({ 
             scheduleId: sch.id, 
