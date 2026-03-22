@@ -93,8 +93,10 @@ export function ScreenDetailModal({ screen, open, onOpenChange }: ScreenDetailMo
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>{screen?.name}</DialogTitle>
-                    <DialogDescription>ID: {screen?.id} • {screen?.status}</DialogDescription>
+                    <DialogTitle>{screen?.name || "Screen Details"}</DialogTitle>
+                    <DialogDescription>
+                        {screen ? `ID: ${screen.id} • ${screen.status}` : "View details and schedules for this screen."}
+                    </DialogDescription>
                 </DialogHeader>
 
                 <Tabs value={tab} onValueChange={setTab} className="mt-4">
