@@ -7,7 +7,8 @@ registerSW({ immediate: true });
 
 // Capture the PWA install prompt globally before React mounts down deep
 window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
+    // We no longer call e.preventDefault() here to allow the browser's native banner to show as requested.
+    // If the user still wants the custom button, it will still work as we store the event.
     (window as any).deferredPrompt = e;
 });
 

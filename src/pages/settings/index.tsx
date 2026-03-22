@@ -178,7 +178,7 @@ function InstallPWAPrompt() {
 
     const handler = (e: Event) => {
       console.log('✅ PWA: beforeinstallprompt event fired');
-      e.preventDefault();
+      // e.preventDefault(); // Commented out to allow the browser's native banner to show as requested.
       setDeferredPrompt(e);
       (window as any).deferredPrompt = e;
       setIsChecking(false);

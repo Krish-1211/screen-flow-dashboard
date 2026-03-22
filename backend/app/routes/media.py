@@ -199,6 +199,7 @@ def list_media(db: Session = Depends(get_db)):
 
 
 @router.post("/upload", response_model=dict)
+@router.post("/upload/", response_model=dict, include_in_schema=False)
 async def upload_media(
     file: UploadFile = File(...),
     name: Optional[str] = Form(None),

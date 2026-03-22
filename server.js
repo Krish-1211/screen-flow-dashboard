@@ -24,6 +24,9 @@ const __dirname = path.dirname(__filename);
 const prisma = new PrismaClient();
 const app = express();
 
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "*").split(',').map(o => o.trim());
+
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'media/uploads/'),
     filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
@@ -300,7 +303,7 @@ app.delete('/screens/:id', async (req, res) => {
 });
 
 // Media
-app.post('/media/upload', upload.single('file'), async (req, res) => {
+app.post(['/media/upload', '/media/upload/'], upload.single('file'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: "No file provided" });
         const type = req.file.mimetype.startsWith('video') ? 'video' : 'image';
