@@ -223,26 +223,38 @@ app.post('/auth/token', upload.none(), (req, res) => {
 // Screens
 app.get('/screens', async (req, res) => {
     try {
-        let screens = await prisma.screen.findMany();
-        if (req.path === '/screens/') {
-            // Frontend workaround
-        }
-        res.json(screens);
+        const screens = await prisma.screen.findMany();
+        // Map currentPlaylistId to playlistId for frontend consistency
+        const mapped = screens.map(s => ({
+            ...s,
+            playlistId: s.currentPlaylistId,
+            device_id: s.deviceId
+        }));
+
+        res.json(mapped);
     } catch (e) {
         logger.error({ err: e }, 'Get Screens Error');
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
+
 // Allow fetching with a trailing slash as per screens.ts frontend mapping
-app.get('/screens/', async (req, res) => {
+app.get(['/screens/', '/screens'], async (req, res) => {
     try {
         const screens = await prisma.screen.findMany();
-        res.json(screens);
+        const mapped = screens.map(s => ({
+            ...s,
+            playlistId: s.currentPlaylistId,
+            device_id: s.deviceId
+        }));
+
+        res.json(mapped);
     } catch (e) {
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
+
 
 // PHASE 5: PLAYER CONFIG API
 app.get('/screens/player', async (req, res) => {
@@ -282,47 +294,101 @@ app.get('/screens/player', async (req, res) => {
 });
 
 app.get('/screens/:id', async (req, res) => {
-    const screen = await prisma.screen.findUnique({ where: { id: req.params.id } });
-    if (!screen) return res.status(404).json({ error: "Not found" });
-    res.json(screen);
+    try {
+        const screen = await prisma.screen.findUnique({ where: { id: req.params.id } });
+        if (!screen) return res.status(404).json({ error: "Not found" });
+        res.json({ ...screen, playlistId: screen.currentPlaylistId, device_id: screen.deviceId });
+    } catch (e) {
+        res.status(500).json({ error: "Internal Server Error" });
+    }
 });
+
 
 app.post('/screens/register', async (req, res) => {
     try {
+        const { name, device_id, playlist_id, playlistId } = req.body;
+        const finalPlaylistId = (playlistId || playlist_id)?.toString() || null;
+
         const newScreen = await prisma.screen.create({ 
             data: { 
-                name: req.body.name || "New Screen", 
-                deviceId: req.body.device_id || `dev_${Date.now()}`,
+                name: name || "New Screen", 
+                deviceId: device_id || `dev_${Date.now()}`,
                 status: 'offline',
-                currentPlaylistId: req.body.playlist_id?.toString() || null
+                currentPlaylistId: finalPlaylistId
             } 
         });
         io.emit('screen-status-updated', { screenId: newScreen.id, status: 'offline' });
-        res.json(newScreen);
+        res.json({ 
+            ...newScreen, 
+            playlistId: newScreen.currentPlaylistId,
+            device_id: newScreen.deviceId
+        });
+
     } catch (e) {
         logger.error(e, 'Register error');
         res.status(500).json({ error: "Failed to create" });
     }
 });
+app.put('/screens/bulk', async (req, res) => {
+    try {
+        const { screen_ids, playlist_id } = req.body;
+        if (!screen_ids || !Array.isArray(screen_ids)) {
+            return res.status(400).json({ error: "screen_ids array is required" });
+        }
+
+        const pId = playlist_id === "none" ? null : playlist_id?.toString();
+
+        const result = await prisma.screen.updateMany({
+            where: { id: { in: screen_ids.map(id => id.toString()) } },
+            data: { currentPlaylistId: pId }
+        });
+
+        io.emit('screen-status-updated', { status: 'bulk-updated' });
+        // Notify each screen individually if online
+        screen_ids.forEach(id => io.to(id.toString()).emit('playlist-updated'));
+
+        res.json({ updated: result.count, playlistId: pId });
+    } catch (e) {
+        logger.error({ err: e }, 'Bulk Update Error');
+        res.status(500).json({ error: "Failed to perform bulk update" });
+    }
+});
+
 app.put('/screens/:id', async (req, res) => {
     try {
+        const { name, playlist_id, playlistId } = req.body;
         const dataPayload = {};
-        if (req.body.name) dataPayload.name = req.body.name;
-        if (req.body.playlist_id) dataPayload.currentPlaylistId = req.body.playlist_id.toString();
+        
+        if (name !== undefined) dataPayload.name = name;
+        
+        // Handle both keys and allow explicit null
+        const pId = playlistId !== undefined ? playlistId : playlist_id;
+        if (pId !== undefined) {
+            dataPayload.currentPlaylistId = pId ? pId.toString() : null;
+        }
 
         const updated = await prisma.screen.update({
             where: { id: req.params.id },
             data: dataPayload
         });
-        io.emit('screen-status-updated', { screenId: updated.id, status: updated.status });
-        if (dataPayload.currentPlaylistId) {
-            io.to(updated.id).emit('playlist-updated');
+        
+        const mapped = { 
+            ...updated, 
+            playlistId: updated.currentPlaylistId,
+            device_id: updated.deviceId 
+        };
+        
+        io.emit('screen-status-updated', { screenId: mapped.id, status: mapped.status });
+        if (pId !== undefined) {
+            io.to(mapped.id).emit('playlist-updated');
         }
-        res.json(updated);
+        res.json(mapped);
     } catch (e) {
+        logger.error({ err: e, id: req.params.id }, 'Update Screen Error');
         res.status(404).json({ error: "Not found" });
     }
 });
+
 app.delete('/screens/:id', async (req, res) => {
     try {
         await prisma.screen.delete({ where: { id: req.params.id } });
