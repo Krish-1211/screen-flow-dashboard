@@ -161,23 +161,47 @@ function enrichMedia(m) {
 async function getActivePlaylist(screen) {
     if (!screen) return null;
 
+    // Fetch schedules for THIS screen OR generic/global schedules
     const schedules = await prisma.schedule.findMany({
-        where: { screenId: screen.id }
+        where: {
+            OR: [
+                { screenId: screen.id },
+                { screenId: null },
+                { screenId: "" }
+            ]
+        }
     });
 
+    // Use UTC for server comparisons or respect a potential offset (for now we log)
     const now = new Date();
+    // We get current time in HH:mm format
     const currentHour = String(now.getHours()).padStart(2, '0');
     const currentMin = String(now.getMinutes()).padStart(2, '0');
     const currentTime = `${currentHour}:${currentMin}`;
-    const currentWeekday = now.getDay();
+    const currentWeekday = now.getDay(); // 0 is Sunday, 1 is Monday...
+
+    logger.debug({ screenId: screen.id, currentTime, currentWeekday, schedulesCount: schedules.length }, 'Checking active schedules');
 
     const validSchedules = schedules.filter(sch => {
         let days = [];
-        try { days = JSON.parse(sch.daysOfWeek); } 
-        catch { days = sch.daysOfWeek.split(',').map(n => parseInt(n.trim(), 10)); }
+        try { 
+            days = typeof sch.daysOfWeek === 'string' ? JSON.parse(sch.daysOfWeek) : sch.daysOfWeek;
+        } catch { 
+            days = String(sch.daysOfWeek).split(',').map(n => parseInt(n.trim(), 10)); 
+        }
 
-        if (!days.includes(currentWeekday)) return false;
-        if (currentTime < sch.startTime || currentTime > sch.endTime) return false;
+        // Check if today is matching
+        if (!days.includes(currentWeekday)) {
+            logger.debug({ scheduleId: sch.id, days, currentWeekday }, 'Schedule day mismatch');
+            return false;
+        }
+
+        // Time comparison
+        if (currentTime < sch.startTime || currentTime > sch.endTime) {
+            logger.debug({ scheduleId: sch.id, startTime: sch.startTime, endTime: sch.endTime, currentTime }, 'Schedule time mismatch');
+            return false;
+        }
+
         return true;
     });
 
