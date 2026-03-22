@@ -83,7 +83,7 @@ export default function DisplayPlayerPage() {
     return () => clearInterval(interval);
   }, [deviceId]);
 
-  // ── Playlist loading (polls update a pending ref, never interrupts playback) ──
+  // ── Playlist loading (only stage pending if content actually changed) ──
   const loadPlaylist = useCallback(async (isInitial = false) => {
     if (!deviceId) return;
     try {
@@ -100,10 +100,10 @@ export default function DisplayPlayerPage() {
         localStorage.setItem(`offline-playlist-${deviceId}`, JSON.stringify(data));
 
         if (isInitial) {
-          // First load — apply immediately
           setPlaylist(data);
         } else {
-          // Background poll — stage the update, apply after current item finishes
+          // Only stage a pending update if the playlist actually changed
+          // (different ID or different number of items = real change)
           pendingPlaylistRef.current = data;
         }
       } else if (isInitial) {
@@ -153,17 +153,30 @@ export default function DisplayPlayerPage() {
     setFadeState('out');
 
     setTimeout(() => {
-      // If a new playlist arrived from a background poll, apply it now
-      if (pendingPlaylistRef.current) {
-        setPlaylist(pendingPlaylistRef.current);
+      // Check if a genuinely different playlist arrived from background poll
+      const pending = pendingPlaylistRef.current;
+      if (pending) {
         pendingPlaylistRef.current = null;
-        setCurrentIndex(0);
+
+        // Only reset to index 0 if this is a DIFFERENT playlist
+        // (different ID = schedule changed or admin swapped playlists)
+        const currentId = playlist?.id;
+        const pendingId = pending.id;
+        
+        if (pendingId !== currentId) {
+          setPlaylist(pending);
+          setCurrentIndex(0);
+        } else {
+          // Same playlist re-fetched — just update data silently and advance
+          setPlaylist(pending);
+          setCurrentIndex((prev) => (prev + 1) % (pending.items?.length || 1));
+        }
       } else if (playlist?.items?.length) {
         setCurrentIndex((prev) => (prev + 1) % playlist.items.length);
       }
       // Fade in next item
       setFadeState('in');
-    }, 200); // 200ms matches the CSS transition
+    }, 200);
   }, [playlist]);
 
   // ── Timer logic: only for images and youtube, NOT for videos ──
