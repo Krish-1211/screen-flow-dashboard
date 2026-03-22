@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import { WifiOff, AlertTriangle, Play } from "lucide-react";
+import { WifiOff, AlertTriangle } from "lucide-react";
 import { screensApi } from "@/services/api/screens";
 import type { Playlist } from "@/types";
 
@@ -8,7 +8,6 @@ export default function DisplayPlayerPage() {
   const [searchParams] = useSearchParams();
   const deviceId = searchParams.get("device_id");
   
-  const [started, setStarted] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [connected, setConnected] = useState(navigator.onLine);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
@@ -17,15 +16,6 @@ export default function DisplayPlayerPage() {
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleStart = () => {
-    setStarted(true);
-    if (!document.fullscreenElement && containerRef.current) {
-      containerRef.current.requestFullscreen().catch((err) => {
-        console.warn("Fullscreen request failed:", err);
-      });
-    }
-  };
 
   useEffect(() => {
     const handleContext = (e: Event) => e.preventDefault();
@@ -49,7 +39,6 @@ export default function DisplayPlayerPage() {
     });
     await Promise.all(fetchPromises);
   }, []);
-
 
   useEffect(() => {
     if (!deviceId) return;
@@ -102,7 +91,7 @@ export default function DisplayPlayerPage() {
     } finally {
       if (isInitial) setLoading(false);
     }
-  }, [deviceId, preloadMedia]); // REMOVED playlist from dependencies
+  }, [deviceId, preloadMedia]);
 
   useEffect(() => {
     if (!deviceId) {
@@ -131,10 +120,9 @@ export default function DisplayPlayerPage() {
     setCurrentIndex((prev) => (prev + 1) % playlist.items.length);
   }, [playlist]);
 
-
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (!playlist?.items?.length || !started) return;
+    if (!playlist?.items?.length) return;
 
     const currentItem = playlist.items[currentIndex];
     const duration = currentItem.duration || 10;
@@ -144,10 +132,9 @@ export default function DisplayPlayerPage() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [currentIndex, playlist, advanceMedia, started]);
+  }, [currentIndex, playlist, advanceMedia]);
 
   const handleMediaError = (e: any) => {
-    console.error("Playback failed:", e);
     setMediaError(true);
     setTimeout(advanceMedia, 5000);
   };
@@ -170,34 +157,15 @@ export default function DisplayPlayerPage() {
     );
   }
 
-  if (!started) {
-    return (
-      <div 
-        ref={containerRef}
-        className="fixed inset-0 bg-[#0a0a0b] flex flex-col items-center justify-center text-white cursor-pointer select-none"
-        onClick={handleStart}
-      >
-        <div className="relative group">
-          <div className="absolute -inset-4 bg-primary/20 rounded-full blur-xl group-hover:bg-primary/30 transition-all duration-500 animate-pulse"></div>
-          <div className="relative w-24 h-24 bg-primary/10 border border-primary/20 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
-            <Play className="w-10 h-10 text-primary fill-primary" />
-          </div>
-        </div>
-        <h1 className="text-3xl font-light mt-8 tracking-wider uppercase">Signage Player</h1>
-        <p className="text-muted-foreground mt-4 font-medium animate-pulse">Click anywhere to start with audio</p>
-        <div className="mt-12 text-[10px] text-gray-600 font-mono tracking-widest uppercase py-1 px-3 border border-gray-800 rounded">
-          DEVICED ID: {deviceId}
-        </div>
-      </div>
-    );
-  }
-
   if (!playlist || playlist.items.length === 0) {
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-6 text-center">
         <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
         <h1 className="text-2xl font-bold">No Content Assigned</h1>
         <p className="mt-2 text-gray-400 max-w-md">Please assign a playlist to this screen from the dashboard to begin playback.</p>
+        <div className="mt-12 text-[10px] text-gray-600 font-mono tracking-widest uppercase py-1 px-3 border border-gray-800 rounded">
+          DEVICED ID: {deviceId}
+        </div>
       </div>
     );
   }
@@ -216,7 +184,15 @@ export default function DisplayPlayerPage() {
   };
 
   return (
-    <div ref={containerRef} className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden cursor-none">
+    <div 
+      ref={containerRef} 
+      className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden cursor-none"
+      onClick={() => {
+        if (!document.fullscreenElement) {
+          containerRef.current?.requestFullscreen().catch(() => {});
+        }
+      }}
+    >
       {mediaError ? (
         <div className="flex flex-col items-center justify-center text-white">
           <AlertTriangle className="w-16 h-16 text-red-500 mb-4" />
