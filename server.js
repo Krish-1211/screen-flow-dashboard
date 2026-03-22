@@ -39,9 +39,13 @@ const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "*").split(',').map(
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'media/uploads/'),
-    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+    filename: (req, file, cb) => {
+        const cleanName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_').replace(/_{2,}/g, '_');
+        cb(null, `${Date.now()}-${cleanName}`);
+    }
 });
 const upload = multer({ storage });
+
 
 app.use(cors({
     origin: (origin, callback) => {
@@ -120,10 +124,11 @@ async function enrichPlaylistData(playlist) {
     const enrichedItems = playlist.items.reduce((acc, item) => {
         const media = mediaRefs.find(m => m.id === item.mediaId);
         if (media) { // if missing -> skip item
+            const enrichedMedia = enrichMedia(media);
             acc.push({
                 mediaId: item.mediaId,
                 type: media.type,
-                url: media.url,
+                url: enrichedMedia.url,
                 duration: item.duration || media.duration || 10,
                 order: acc.length // Normalize order
             });
@@ -134,6 +139,22 @@ async function enrichPlaylistData(playlist) {
     return {
         id: playlist.id,
         items: enrichedItems
+    };
+}
+
+// Helper to absolute-ize media URLs for the frontend
+function enrichMedia(m) {
+    if (!m || !m.url) return m;
+    // Already absolute (Youtube or external)
+    if (m.url.startsWith('http') || m.url.startsWith('https')) return m;
+    
+    // Convert relative path to absolute
+    const baseUrl = (process.env.API_BASE_URL || "").replace(/\/$/, '');
+    if (!baseUrl) return m;
+    
+    return {
+        ...m,
+        url: m.url.startsWith('/') ? `${baseUrl}${m.url}` : `${baseUrl}/${m.url}`
     };
 }
 
@@ -318,6 +339,7 @@ app.post(['/media/upload', '/media/upload/'], upload.single('file'), async (req,
         if (!req.file) return res.status(400).json({ error: "No file provided" });
         const type = req.file.mimetype.startsWith('video') ? 'video' : 'image';
         const url = `/media/uploads/${req.file.filename}`;
+        
         const newMedia = await prisma.media.create({
             data: { 
                 name: req.body.name || req.file.originalname, 
@@ -326,7 +348,7 @@ app.post(['/media/upload', '/media/upload/'], upload.single('file'), async (req,
                 duration: req.body.duration ? parseInt(req.body.duration) : null
             }
         });
-        res.json(newMedia);
+        res.json(enrichMedia(newMedia));
     } catch (e) { 
         logger.error({ err: e }, 'Media Upload Error');
         res.status(500).json({ 
@@ -338,7 +360,7 @@ app.post(['/media/upload', '/media/upload/'], upload.single('file'), async (req,
 });
 app.get('/media', async (req, res) => {
     const media = await prisma.media.findMany();
-    res.json(media);
+    res.json(media.map(m => enrichMedia(m)));
 });
 app.delete('/media/:id', async (req, res) => {
     await prisma.media.delete({ where: { id: req.params.id } }).catch(() => {});
