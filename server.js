@@ -284,7 +284,7 @@ app.get('/screens/player', async (req, res) => {
                         media: { 
                             name: "No Content Assigned",
                             type: "image", 
-                            url: "https://via.placeholder.com/1920x1080?text=No+Content+Assigned" 
+                            url: "https://placehold.co/1920x1080?text=No+Content+Assigned" 
                         },
                         duration: 10,
                         order: 0

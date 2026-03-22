@@ -39,7 +39,6 @@ export default function DisplayPlayerPage() {
   }, []);
 
   const preloadMedia = useCallback(async (pl: Playlist) => {
-    console.log("Preloading media...");
     const fetchPromises = pl.items.map(item => {
       if (item.media?.url && item.media.type !== 'youtube') {
         return fetch(item.media.url)
@@ -51,14 +50,15 @@ export default function DisplayPlayerPage() {
     await Promise.all(fetchPromises);
   }, []);
 
+
   useEffect(() => {
     if (!deviceId) return;
     let interval: any;
 
     const startHeartbeat = async () => {
-      screensApi.heartbeat(deviceId).catch(console.error);
+      screensApi.heartbeat(deviceId);
       interval = setInterval(() => {
-        screensApi.heartbeat(deviceId).catch(console.error);
+        screensApi.heartbeat(deviceId);
       }, 30000);
 
       const handleUnload = () => {
@@ -81,7 +81,7 @@ export default function DisplayPlayerPage() {
   const loadPlaylist = useCallback(async (isInitial = false) => {
     if (!deviceId) return;
     try {
-      if (isInitial && !playlist) setLoading(true);
+      if (isInitial) setLoading(true);
       const data = await screensApi.getPlayerConfig(deviceId);
       
       if (data && data.items) {
@@ -102,7 +102,7 @@ export default function DisplayPlayerPage() {
     } finally {
       if (isInitial) setLoading(false);
     }
-  }, [deviceId, preloadMedia, playlist]);
+  }, [deviceId, preloadMedia]); // REMOVED playlist from dependencies
 
   useEffect(() => {
     if (!deviceId) {
@@ -130,6 +130,7 @@ export default function DisplayPlayerPage() {
     if (!playlist?.items?.length) return;
     setCurrentIndex((prev) => (prev + 1) % playlist.items.length);
   }, [playlist]);
+
 
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
