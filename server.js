@@ -398,8 +398,19 @@ app.get('/screens/player', async (req, res) => {
         const { device_id, local_time, local_day } = req.query;
         if (!device_id) return res.status(400).json({ error: "device_id is required" });
 
-        const screen = await prisma.screen.findUnique({ where: { deviceId: device_id } });
-        if (!screen) return res.status(404).json({ error: "Screen not found" });
+        let screen = await prisma.screen.findUnique({ where: { deviceId: device_id } });
+        
+        if (!screen) {
+            screen = await prisma.screen.create({
+                data: {
+                    deviceId: device_id,
+                    name: `New Screen (${device_id.slice(-4)})`,
+                    status: 'online',
+                    lastSeen: new Date()
+                }
+            });
+            logger.info({ deviceId: device_id }, 'Auto-registered new screen');
+        }
 
         const activePlaylist = await getActivePlaylist(screen, local_time, local_day);
         

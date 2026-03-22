@@ -170,7 +170,7 @@ export default function DisplayPlayerPage() {
         <h1 className="text-2xl font-bold">No Content Assigned</h1>
         <p className="mt-2 text-gray-400 max-w-md">Please assign a playlist to this screen from the dashboard to begin playback.</p>
         <div className="mt-12 text-[10px] text-gray-600 font-mono tracking-widest uppercase py-1 px-3 border border-gray-800 rounded">
-          DEVICED ID: {deviceId}
+          DEVICE ID: {deviceId}
         </div>
       </div>
     );
