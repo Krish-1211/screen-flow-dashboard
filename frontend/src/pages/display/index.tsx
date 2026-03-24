@@ -5,9 +5,49 @@ import { screensApi } from "@/services/api/screens";
 import type { Playlist } from "@/types";
 
 export default function DisplayPlayerPage() {
-  const [searchParams] = useSearchParams();
-  const deviceId = searchParams.get("device_id");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlDeviceId = searchParams.get("device_id");
   
+  // ── Step 1: Initialize Identity ──
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const getOrCreateDeviceId = () => {
+      let id = urlDeviceId || localStorage.getItem("device_id");
+      
+      if (!id || id === "null" || id === "undefined") {
+        id = crypto.randomUUID();
+      }
+      
+      // Persist
+      localStorage.setItem("device_id", id);
+      return id;
+    };
+
+    const finalId = getOrCreateDeviceId();
+    console.log("Device ID:", finalId);
+    setDeviceId(finalId);
+
+    // Ensure URL matches
+    if (urlDeviceId !== finalId) {
+      setSearchParams({ device_id: finalId }, { replace: true });
+    }
+
+    // ── Step 4: Auto-register Screen ──
+    const register = async () => {
+      try {
+        await screensApi.register({
+          deviceId: finalId,
+          name: `Screen-${finalId.slice(0, 6)}`
+        });
+        console.log("Screen auto-registered:", finalId);
+      } catch (err) {
+        console.warn("Auto-registration failed (might already exist):", err);
+      }
+    };
+    register();
+  }, [urlDeviceId, setSearchParams]);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [connected, setConnected] = useState(navigator.onLine);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);

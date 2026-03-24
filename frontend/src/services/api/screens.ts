@@ -27,7 +27,19 @@ export const screensApi = {
             device_id: s.device_id
         } as Screen;
     },
-    create: async (payload: { name: string, playlist_id?: number }): Promise<Screen> => {
+    create: async (payload: { name: string, playlist_id?: string | number }): Promise<Screen> => {
+        const response = await api.post('/screens', payload);
+        const s = response.data;
+        return {
+            id: String(s.id),
+            name: s.name,
+            status: s.status,
+            playlistId: s.playlistId,
+            lastPing: s.lastPing,
+            device_id: s.device_id
+        } as Screen;
+    },
+    register: async (payload: { deviceId: string, name: string, playlist_id?: string | number }): Promise<Screen> => {
         const response = await api.post('/screens/register', payload);
         const s = response.data;
         return {
