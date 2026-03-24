@@ -223,15 +223,28 @@ app.delete('/media/:id', (req, res) => {
 });
 
 // PLAYLISTS
-app.get('/playlists', (req, res) => {
+app.get('/playlists', async (req, res) => {
     const db = readDB();
     const playlists = db.playlists || [];
     
+    // Get all unique media IDs from all playlists
+    const allMediaIds = [...new Set(playlists.flatMap(pl => (pl.items || []).map(i => i.mediaId)))];
+    
+    const { data: mediaList, error } = await supabase
+        .from('media')
+        .select('*')
+        .in('id', allMediaIds);
+
+    if (error) return res.status(500).json({ error });
+
+    const mediaMap = {};
+    mediaList.forEach(m => { mediaMap[m.id] = m; });
+
     const enriched = playlists.map(pl => ({
         ...pl,
         items: (pl.items || []).map(item => ({
             ...item,
-            media: db.media.find(m => m.id === item.mediaId)
+            media: mediaMap[item.mediaId]
         }))
     }));
     
@@ -283,7 +296,7 @@ app.post('/schedules', (req, res) => {
 });
 
 // PLAYER Heartbeat & Playlist Discovery
-app.get('/screens/player', (req, res) => {
+app.get('/screens/player', async (req, res) => {
     const { device_id } = req.query;
     const db = readDB();
     const screen = db.screens.find(s => s.device_id === device_id || s.id === device_id);
@@ -295,11 +308,22 @@ app.get('/screens/player', (req, res) => {
     const playlist = db.playlists.find(p => p.id === screen.playlistId);
     if (!playlist) return res.json({ name: "No Content", items: [] });
 
-    // Enrich items with media objects
-    const enrichedItems = (playlist.items || []).map(item => {
-        const media = db.media.find(m => m.id === item.mediaId);
-        return { ...item, media };
-    }).filter(it => it.media);
+    // Enrich items with Supabase media objects
+    const mediaIds = (playlist.items || []).map(i => i.mediaId);
+    const { data: mediaList, error } = await supabase
+        .from('media')
+        .select('*')
+        .in('id', mediaIds);
+
+    if (error) return res.status(500).json({ error });
+
+    const mediaMap = {};
+    mediaList.forEach(m => { mediaMap[m.id] = m; });
+
+    const enrichedItems = (playlist.items || []).map(item => ({
+        ...item,
+        media: mediaMap[item.mediaId]
+    })).filter(it => it.media);
 
     res.json({ ...playlist, items: enrichedItems });
 });
