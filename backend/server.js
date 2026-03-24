@@ -19,7 +19,11 @@ const io = new Server(httpServer, {
 const upload = multer();
 
 // ── Step 1: Middleware ──
-app.use(cors());
+app.use(cors({
+    origin: ["https://screenflow-dashboard.onrender.com", "http://localhost:5173", "http://localhost:3000"],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+}));
 app.use(express.json());
 app.use(pinoHttp({ logger }));
 
