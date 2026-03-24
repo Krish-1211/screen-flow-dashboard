@@ -88,4 +88,23 @@
   .glass-card {
     @apply bg-card/80 backdrop-blur-sm border border-border rounded-lg;
   }
+
+  .fade-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .fade-item {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transition: opacity 0.8s ease-in-out;
+    background: black;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }

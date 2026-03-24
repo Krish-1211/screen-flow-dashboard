@@ -83,23 +83,45 @@ app.get('/screens', async (req, res) => {
 });
 
 app.post('/screens', async (req, res) => {
-    const screen = {
-        id: Date.now().toString(),
-        client_id: CLIENT_ID,
-        device_id: req.body.device_id || req.body.deviceId || crypto.randomUUID(),
+    const deviceId = req.body.device_id || req.body.deviceId || crypto.randomUUID();
+    
+    // Check if screen exists with device_id
+    const { data: existing } = await supabase
+        .from('screens')
+        .select('*')
+        .eq('client_id', CLIENT_ID)
+        .eq('device_id', deviceId)
+        .maybeSingle();
+
+    const screenData = {
         name: req.body.name,
-        status: 'online',
         playlist_id: req.body.playlistId || req.body.playlist_id,
+        status: 'online',
         last_ping: new Date().toISOString()
     };
 
-    const { error } = await supabase.from('screens').insert(screen);
-    if (error) {
-        logger.error({ error, screen }, 'Failed to insert screen into Supabase');
-        return res.status(500).json({ error });
+    if (existing) {
+        // Update
+        const { data, error } = await supabase
+            .from('screens')
+            .update(screenData)
+            .eq('id', existing.id)
+            .select()
+            .single();
+        if (error) return res.status(500).json({ error });
+        return res.json(data);
+    } else {
+        // Create
+        const screen = {
+            id: Date.now().toString(),
+            client_id: CLIENT_ID,
+            device_id: deviceId,
+            ...screenData
+        };
+        const { error } = await supabase.from('screens').insert(screen);
+        if (error) return res.status(500).json({ error });
+        res.json(screen);
     }
-    logger.info({ screenId: screen.id }, 'Screen inserted successfully');
-    res.json(screen);
 });
 
 app.put('/screens/:id', async (req, res) => {
@@ -463,6 +485,22 @@ app.get('/audit', (req, res) => {
     const db = readDB();
     if (!db.audit) { db.audit = []; writeDB(db); }
     res.json(db.audit);
+});
+
+// Cleanup logic
+app.post('/admin/cleanup', async (req, res) => {
+    logger.info('Performing screen cleanup...');
+    const { data, error } = await supabase
+        .from('screens')
+        .delete()
+        .or('device_id.is.null,device_id.eq.null,device_id.eq.undefined,device_id.eq.""');
+    
+    if (error) {
+        logger.error({ error }, 'Cleanup failed');
+        return res.status(500).json({ error });
+    }
+    
+    res.json({ message: "Cleanup completed", details: data });
 });
 
 // ── Step 5: Launch ──

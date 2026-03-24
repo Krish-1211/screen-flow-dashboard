@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { io, Socket } from 'socket.io-client';
 import { versionManager } from './versionManager';
 import { playlistStore } from '../storage/playlistStore';
 import type { Playlist } from '@/types';
@@ -9,7 +8,6 @@ export type SyncStatus = {
   stale: boolean;
   lastSuccessAt: number | null;
 };
-
 export class SyncManager {
   private deviceId: string;
   private apiBaseUrl: string;
@@ -18,7 +16,6 @@ export class SyncManager {
   private onSyncActivity: (isSyncing: boolean) => void;
   private isRunning = false;
   private loopPromise: Promise<void> | null = null;
-  private socket: Socket | null = null;
   private ticksSinceFullFetch = 0;
 
   constructor(
@@ -61,21 +58,11 @@ export class SyncManager {
   public startSyncLoop() {
     if (this.loopPromise) return;
     this.isRunning = true;
-
-    // Real-time Push via Sockets
-    this.socket = io(this.apiBaseUrl);
-    this.socket.on('playlist-updated', () => {
-      console.info('[player] real-time update received via socket');
-      void this.forceFullSync();
-    });
-
     this.loopPromise = this.runLoop();
   }
 
   public stop() {
     this.isRunning = false;
-    this.socket?.disconnect();
-    this.socket = null;
   }
 
   private async runLoop() {

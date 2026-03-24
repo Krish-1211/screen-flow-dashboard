@@ -28,7 +28,11 @@ export const screensApi = {
         } as Screen;
     },
     create: async (payload: { name: string, playlist_id?: string | number }): Promise<Screen> => {
-        const response = await api.post('/screens', payload);
+        const fullPayload = {
+            ...payload,
+            device_id: crypto.randomUUID()
+        };
+        const response = await api.post('/screens', fullPayload);
         const s = response.data;
         return {
             id: String(s.id),

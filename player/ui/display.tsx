@@ -11,10 +11,12 @@ interface PlayerProps {
 }
 
 export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) => {
-  const [currentItem, setCurrentItem] = useState<PlaylistItem | null>(null);
+  const [activeLayer, setActiveLayer] = useState<'A' | 'B'>('A');
+  const [itemA, setItemA] = useState<{ item: PlaylistItem | null, url: string }>({ item: null, url: '' });
+  const [itemB, setItemB] = useState<{ item: PlaylistItem | null, url: string }>({ item: null, url: '' });
+  
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [state, setState] = useState<PlayerState>(PlayerState.IDLE);
-  const [resolvedMediaUrl, setResolvedMediaUrl] = useState('');
   const [isOffline, setIsOffline] = useState(false);
   const [isStaleOffline, setIsStaleOffline] = useState(false);
   
@@ -27,13 +29,32 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   const watchdogTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRenderAtRef = useRef<number>(Date.now());
   const currentItemRef = useRef<PlaylistItem | null>(null);
+  
+  const videoRefA = useRef<HTMLVideoElement>(null);
+  const videoRefB = useRef<HTMLVideoElement>(null);
+
+  const playVideoSafe = async (video: HTMLVideoElement | null) => {
+    if (!video) return;
+    try {
+      video.muted = false;
+      await video.play();
+    } catch (err) {
+      console.warn('[player] autoplay unmuted blocked, falling back to muted');
+      video.muted = true;
+      try {
+        await video.play();
+      } catch (e) {
+        console.error('[player] critical video play failure', e);
+      }
+    }
+  };
 
   useEffect(() => {
-    currentItemRef.current = currentItem;
-    if (currentItem) {
+    currentItemRef.current = (activeLayer === 'A' ? itemA : itemB).item;
+    if (currentItemRef.current) {
       lastRenderAtRef.current = Date.now();
     }
-  }, [currentItem]);
+  }, [itemA, itemB, activeLayer]);
 
   useEffect(() => {
     // Kiosk mode hardening: disable interactions and enforce immersive display.
@@ -97,6 +118,35 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   }, []);
 
   useEffect(() => {
+    const registerScreen = async () => {
+      if (!localStorage.getItem("sf_registered")) {
+        try {
+          const response = await fetch(`${apiBaseUrl}/screens/register`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              deviceId: deviceId,
+              name: "Screen-" + deviceId.slice(0, 6)
+            })
+          });
+          if (response.ok) {
+            localStorage.setItem("sf_registered", "true");
+            console.info("[player] Screen registered successfully");
+          } else {
+            const errData = await response.json();
+            console.error("[player] Screen registration failed", errData);
+          }
+        } catch (e) {
+          console.error("[player] Network error during registration", e);
+        }
+      }
+    };
+    void registerScreen();
+  }, [deviceId, apiBaseUrl]);
+
+  useEffect(() => {
     const stateMachine = stateMachineRef.current;
     const unsubscribeState = stateMachine.subscribe((nextState) => {
       console.info(`[player] state -> ${nextState}`);
@@ -104,7 +154,19 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     });
     stateMachine.transition('STARTUP');
 
-    const engine = new PlayerEngine((item) => setCurrentItem(item));
+    const engine = new PlayerEngine(async (item) => {
+      const url = await mediaCache.getMediaSource(item.media?.url || '');
+      
+      setActiveLayer((current) => {
+        const next = current === 'A' ? 'B' : 'A';
+        if (next === 'A') {
+          setItemA({ item, url });
+        } else {
+          setItemB({ item, url });
+        }
+        return next;
+      });
+    });
 
     const handleSyncStatus = (status: SyncStatus) => {
       setIsOffline(!status.online);
@@ -149,30 +211,26 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     };
   }, [deviceId, apiBaseUrl]);
 
+  // Handle video playback when layer changes
   useEffect(() => {
-    let active = true;
-    const item = currentItem;
-    const remoteUrl = item?.media?.url || '';
-    if (!remoteUrl) {
-      setResolvedMediaUrl('');
-      return;
+    if (activeLayer === 'A' && itemA.item?.media?.type === 'video') {
+      void playVideoSafe(videoRefA.current);
+    } else if (activeLayer === 'B' && itemB.item?.media?.type === 'video') {
+      void playVideoSafe(videoRefB.current);
     }
+  }, [activeLayer, itemA.item, itemB.item]);
 
-    void mediaCache.getMediaSource(remoteUrl).then((url) => {
-      if (!active) return;
-      setResolvedMediaUrl(url);
-    });
+  // Preloading
+  useEffect(() => {
+    const currentItem = (activeLayer === 'A' ? itemA : itemB).item;
+    if (!currentItem) return;
 
-    const currentIndex = playlistItems.findIndex((playlistItem) => playlistItem.id === item?.id);
+    const currentIndex = playlistItems.findIndex((p) => p.id === currentItem.id);
     if (currentIndex >= 0) {
       const nextItem = playlistItems[(currentIndex + 1) % playlistItems.length];
       void mediaCache.preloadOne(nextItem?.media?.url);
     }
-
-    return () => {
-      active = false;
-    };
-  }, [currentItem, playlistItems]);
+  }, [activeLayer, itemA.item, itemB.item, playlistItems]);
 
   const handleVideoEnded = () => {
     engineRef.current?.onMediaEnded();
@@ -190,7 +248,9 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   };
 
   useEffect(() => {
+    const currentItem = (activeLayer === 'A' ? itemA : itemB).item;
     if (playlistItems.length > 0 || currentItem) return;
+    
     if (noContentRetryTimeoutRef.current) clearTimeout(noContentRetryTimeoutRef.current);
     noContentRetryTimeoutRef.current = setTimeout(() => {
       console.info('[player] no content, retrying sync');
@@ -201,7 +261,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     return () => {
       if (noContentRetryTimeoutRef.current) clearTimeout(noContentRetryTimeoutRef.current);
     };
-  }, [playlistItems, currentItem]);
+  }, [playlistItems, itemA.item, itemB.item, activeLayer]);
 
   useEffect(() => {
     const scheduleWatchdog = () => {
@@ -226,7 +286,6 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
           stateMachineRef.current.transition('PLAYLIST_READY');
         }
 
-        // Invalid state failsafe: playlist exists but state is IDLE/LOADING too long.
         const stateNow = stateMachineRef.current.getState();
         if (status.playlistLength > 0 && (stateNow === PlayerState.IDLE || stateNow === PlayerState.LOADING) && idleForMs > 15000) {
           console.warn('[player] invalid state detected, forcing LOADING -> PLAYING');
@@ -251,53 +310,70 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     );
   }
 
-  if (!currentItem) {
+  const currentItem = (activeLayer === 'A' ? itemA : itemB).item;
+  if (!currentItem && !itemA.item && !itemB.item) {
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white cursor-none select-none">
         <h1 className="text-2xl font-semibold">No Content</h1>
         <p className="mt-2 text-sm text-gray-400">Retrying content sync...</p>
         {isOffline && (
-          <p className="mt-3 text-xs text-amber-400">
-            Offline mode active
-          </p>
+          <p className="mt-3 text-xs text-amber-400">Offline mode active</p>
         )}
       </div>
     );
   }
 
-  const isVideo = currentItem.media?.type === 'video';
-  const mediaUrl = resolvedMediaUrl || currentItem.media?.url || '';
+  const renderLayer = (layer: 'A' | 'B') => {
+    const data = layer === 'A' ? itemA : itemB;
+    if (!data.item) return null;
+    
+    const isVideo = data.item.media?.type === 'video';
+    const isVisible = activeLayer === layer;
+
+    return (
+      <div 
+        key={layer}
+        className="fade-item"
+        style={{ opacity: isVisible ? 1 : 0, zIndex: isVisible ? 2 : 1 }}
+      >
+        {isVideo ? (
+          <video
+            ref={layer === 'A' ? videoRefA : videoRefB}
+            src={data.url}
+            className="w-full h-full object-contain"
+            autoPlay
+            playsInline
+            onEnded={layer === activeLayer ? handleVideoEnded : undefined}
+            onError={layer === activeLayer ? handleMediaError : undefined}
+          />
+        ) : (
+          <img
+            src={data.url}
+            className="w-full h-full object-contain"
+            alt="Content"
+            onError={layer === activeLayer ? handleMediaError : undefined}
+          />
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden cursor-none select-none">
       {isOffline && (
-        <div className="absolute top-3 right-3 z-10 rounded bg-black/50 px-2 py-1 text-xs text-amber-300">
+        <div className="absolute top-3 right-3 z-30 rounded bg-black/50 px-2 py-1 text-xs text-amber-300">
           {isStaleOffline ? "Offline mode (stale cache)" : "Offline mode"}
         </div>
       )}
       {state === PlayerState.ERROR && (
-        <div className="absolute bottom-3 right-3 z-10 rounded bg-red-900/70 px-2 py-1 text-xs text-red-100">
+        <div className="absolute bottom-3 right-3 z-30 rounded bg-red-900/70 px-2 py-1 text-xs text-red-100">
           Media error, skipping...
         </div>
       )}
-      {isVideo ? (
-        <video
-          src={mediaUrl}
-          className="w-full h-full object-contain"
-          autoPlay
-          playsInline
-          muted
-          onEnded={handleVideoEnded}
-          onError={handleMediaError}
-        />
-      ) : (
-        <img
-          src={mediaUrl}
-          className="w-full h-full object-contain"
-          alt="Content"
-          onError={handleMediaError}
-        />
-      )}
+      <div className="fade-container">
+        {renderLayer('A')}
+        {renderLayer('B')}
+      </div>
     </div>
   );
 };

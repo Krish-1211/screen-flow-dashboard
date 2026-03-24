@@ -2,6 +2,7 @@ import type { PlaylistItem, Playlist } from '@/types';
 
 export class PlayerEngine {
   private playlist: PlaylistItem[] = [];
+  private nextPlaylist: PlaylistItem[] | null = null;
   private currentIndex = 0;
   private shouldRun = false;
   private loopRunning = false;
@@ -15,11 +16,23 @@ export class PlayerEngine {
   }
 
   public replacePlaylist(pl: Playlist) {
-    console.info('[player] playlist update received, restarting playback');
-    this.stopPlaybackLoop();
-    this.playlist = pl.items || [];
-    this.currentIndex = 0;
-    this.startPlayback();
+    const newItems = pl.items || [];
+    if (JSON.stringify(newItems) === JSON.stringify(this.playlist)) {
+      return;
+    }
+
+    console.info('[player] playlist update received, buffering for next transition');
+    this.nextPlaylist = newItems;
+    
+    // If nothing is playing, start immediately
+    if (this.playlist.length === 0) {
+      this.playlist = this.nextPlaylist;
+      this.nextPlaylist = null;
+      this.currentIndex = 0;
+      if (!this.loopRunning) {
+        this.startPlayback();
+      }
+    }
   }
 
   public startPlayback() {
@@ -54,8 +67,13 @@ export class PlayerEngine {
       }
 
       if (!this.shouldRun || token !== this.loopToken) break;
-      if (this.playlist.length === 0) continue;
-      this.currentIndex = (this.currentIndex + 1) % this.playlist.length;
+      if (this.nextPlaylist) {
+        this.playlist = this.nextPlaylist;
+        this.nextPlaylist = null;
+        this.currentIndex = 0;
+      } else if (this.playlist.length > 0) {
+        this.currentIndex = (this.currentIndex + 1) % this.playlist.length;
+      }
     }
 
     this.loopRunning = false;
