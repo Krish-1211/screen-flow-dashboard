@@ -193,7 +193,13 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     stateMachine.transition('STARTUP');
 
     const engine = new PlayerEngine(async (item) => {
-      const url = await mediaCache.getMediaSource(item.media?.url || '');
+      // Step: Avoid caching/preloading for system gap
+      let url = '';
+      if (item.media?.type !== 'system_gap') {
+        url = await mediaCache.getMediaSource(item.media?.url || '');
+      } else {
+        url = item.media?.url || '/black-screen.svg';
+      }
       
       const currentItem = (activeLayer === 'A' ? itemA : itemB).item;
       const isLoop = currentItem?.id === item.id;
