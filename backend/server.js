@@ -137,17 +137,37 @@ app.delete('/screens/:id', async (req, res) => {
 
 app.post('/screens/register', async (req, res) => {
     const { deviceId, name, playlist_id } = req.body;
-    const { data: existing } = await supabase
+    
+    // 1. First, search for a screen with this exact deviceId
+    let { data: existing } = await supabase
         .from('screens')
         .select('*')
         .eq('client_id', CLIENT_ID)
         .eq('device_id', deviceId)
         .maybeSingle();
 
+    // 2. If not found by deviceId, search for a screen with this exact Name (Adoption Flow)
+    // This allows a manually created screen named 'lobby' to be 'claimed' by a physical machine.
+    if (!existing && name) {
+        const { data: byName } = await supabase
+            .from('screens')
+            .select('*')
+            .eq('client_id', CLIENT_ID)
+            .eq('name', name)
+            .maybeSingle();
+        
+        if (byName) {
+            existing = byName;
+            logger.info({ screenId: existing.id, name }, 'Screen Adoption: Linking machine to existing name record');
+        }
+    }
+
     if (existing) {
+        // Update record (even if we just adopted it, we now save the persistent deviceId)
         const { data: updated, error } = await supabase
             .from('screens')
             .update({ 
+                device_id: deviceId, // Secure the link
                 name: name || existing.name, 
                 playlist_id: playlist_id || existing.playlist_id,
                 status: 'online',
