@@ -26,6 +26,9 @@
     "schema": "backend/prisma/schema.prisma"
   },
   "optionalDependencies": {
+    "@esbuild/linux-arm64": "*",
+    "@esbuild/linux-x64": "*",
+    "@rollup/rollup-linux-arm64-gnu": "*",
     "@rollup/rollup-linux-x64-gnu": "*"
   },
   "dependencies": {
