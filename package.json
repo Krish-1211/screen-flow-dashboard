@@ -19,6 +19,13 @@
     "postinstall": "npm run db:generate --workspace=backend"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "prisma": "^7.5.0"
+  },
+  "prisma": {
+    "schema": "backend/prisma/schema.prisma"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "*"
   }
 }
