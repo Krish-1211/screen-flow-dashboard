@@ -279,6 +279,13 @@ app.post('/screens/heartbeat', (req, res) => {
     res.status(204).send();
 });
 
+// AUDIT LOGS
+app.get('/audit', (req, res) => {
+    const db = readDB();
+    if (!db.audit) { db.audit = []; writeDB(db); }
+    res.json(db.audit);
+});
+
 // ── Step 5: Launch ──
 app.get('/health', (req, res) => res.json({ status: "ok", storage: "json" }));
 
