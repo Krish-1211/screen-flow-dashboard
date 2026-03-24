@@ -4,18 +4,23 @@ import path from "path";
 import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => {
+  const enablePwa = process.env.ENABLE_PWA === "true";
+
+  return {
   server: {
     host: "::",
-    port: 8080,
+    port: 5173,
+    strictPort: true,
     hmr: {
       overlay: false,
     },
   },
   plugins: [
     react(),
-    VitePWA({
+    enablePwa && VitePWA({
       registerType: 'autoUpdate',
+      minify: false,
       includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png', 'logo.png'],
       manifest: {
         name: 'ScreenFlow Signage',
@@ -48,4 +53,5 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-}));
+  };
+});

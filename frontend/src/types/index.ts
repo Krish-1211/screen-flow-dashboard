@@ -42,4 +42,6 @@ export interface Playlist {
     id: number | string;
     name: string;
     items: PlaylistItem[];
+    updatedAt?: string;
+    version?: string;
 }
