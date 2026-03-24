@@ -86,7 +86,7 @@ app.post('/screens', async (req, res) => {
     const screen = {
         id: Date.now().toString(),
         client_id: CLIENT_ID,
-        device_id: req.body.device_id || req.body.deviceId,
+        device_id: req.body.device_id || req.body.deviceId || crypto.randomUUID(),
         name: req.body.name,
         status: 'online',
         playlist_id: req.body.playlistId || req.body.playlist_id,
