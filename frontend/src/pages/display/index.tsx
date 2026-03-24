@@ -12,41 +12,52 @@ export default function DisplayPlayerPage() {
   const [deviceId, setDeviceId] = useState<string | null>(null);
 
   useEffect(() => {
+    const isValidDeviceId = (id: string | null) => {
+      return id && id !== "null" && id !== "undefined" && id.trim() !== "";
+    };
+
     const getOrCreateDeviceId = () => {
-      let id = urlDeviceId || localStorage.getItem("device_id");
-      
-      if (!id || id === "null" || id === "undefined") {
-        id = crypto.randomUUID();
+      const params = new URLSearchParams(window.location.search);
+      const urlId = params.get("device_id");
+
+      if (isValidDeviceId(urlId)) {
+        localStorage.setItem("sf_device_id", urlId!);
+        return urlId!;
       }
+
+      const stored = localStorage.getItem("sf_device_id");
+      if (isValidDeviceId(stored)) return stored!;
+
+      const newId = crypto.randomUUID();
+      localStorage.setItem("sf_device_id", newId);
       
-      // Persist
-      localStorage.setItem("device_id", id);
-      return id;
+      // Force URL update
+      window.history.replaceState({}, "", `/display?device_id=${newId}`);
+      return newId;
     };
 
     const finalId = getOrCreateDeviceId();
     console.log("Device ID:", finalId);
     setDeviceId(finalId);
 
-    // Ensure URL matches
-    if (urlDeviceId !== finalId) {
-      setSearchParams({ device_id: finalId }, { replace: true });
-    }
-
-    // ── Step 4: Auto-register Screen ──
+    // ── Step 6: Prevent duplicate screen registration ──
     const register = async () => {
+      if (localStorage.getItem("sf_registered") === "true") return;
+
       try {
         await screensApi.register({
           deviceId: finalId,
           name: `Screen-${finalId.slice(0, 6)}`
         });
+        localStorage.setItem("sf_registered", "true");
         console.log("Screen auto-registered:", finalId);
       } catch (err) {
-        console.warn("Auto-registration failed (might already exist):", err);
+        // If it fails with 409 or similar, it might already exist
+        console.warn("Auto-registration check:", err);
       }
     };
     register();
-  }, [urlDeviceId, setSearchParams]);
+  }, []);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [connected, setConnected] = useState(navigator.onLine);

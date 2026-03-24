@@ -168,7 +168,11 @@ app.post('/screens/register', async (req, res) => {
             last_ping: new Date().toISOString()
         };
         const { error } = await supabase.from('screens').insert(newScreen);
-        if (error) return res.status(500).json({ error });
+        if (error) {
+            logger.error({ error, newScreen }, 'Failed to register brand new screen in Supabase');
+            return res.status(500).json({ error });
+        }
+        logger.info({ screenId: newScreen.id }, 'New screen registered successfully');
         res.json(newScreen);
     }
 });
