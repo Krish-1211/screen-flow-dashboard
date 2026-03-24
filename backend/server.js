@@ -272,7 +272,13 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
             upsert: false
         });
 
-    if (uploadError) return res.status(500).json({ error: uploadError });
+    if (uploadError) {
+        logger.error({ error: uploadError, fileName }, 'Supabase Storage upload failed');
+        return res.status(500).json({ 
+            error: "Storage error", 
+            details: uploadError.message || uploadError 
+        });
+    }
 
     const { data: urlData } = supabase.storage
         .from('media')
@@ -289,22 +295,83 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
 
     const { error: dbError } = await supabase.from('media').insert(media);
 
-    if (dbError) return res.status(500).json({ error: dbError });
+    if (dbError) {
+        logger.error({ error: dbError, media }, 'Supabase Database insert failed');
+        return res.status(500).json({ 
+            error: "Database error", 
+            details: dbError.message || dbError 
+        });
+    }
 
     io.emit('media-updated');
     res.json(media);
 });
-app.post('/media/youtube', (req, res) => {
+app.post('/media/youtube', async (req, res) => {
+    const media = {
+        id: Date.now().toString(),
+        client_id: CLIENT_ID,
+        name: req.body.name || "YouTube",
+        type: 'youtube',
+        url: req.body.url,
+        size: 0
+    };
+
+    // 1. Save to Supabase
+    const { error: dbError } = await supabase.from('media').insert(media);
+    if (dbError) {
+        logger.error({ error: dbError, media }, 'YouTube insert to Supabase failed');
+        return res.status(500).json({ error: dbError });
+    }
+
+    // 2. Save to local JSON for safety
     const db = readDB();
-    const media = { id: Date.now().toString(), name: req.body.name || "YouTube", type: 'youtube', url: req.body.url };
+    if (!db.media) db.media = [];
     db.media.push(media);
     writeDB(db);
+
+    io.emit('media-updated');
     res.json(media);
 });
-app.delete('/media/:id', (req, res) => {
+app.delete('/media/:id', async (req, res) => {
+    const { id } = req.params;
+
+    // 1. Get media info from Supabase to find the storage filename
+    const { data: media, error: getError } = await supabase
+        .from('media')
+        .select('*')
+        .eq('id', id)
+        .eq('client_id', CLIENT_ID)
+        .maybeSingle();
+
+    if (getError) return res.status(500).json({ error: getError });
+
+    if (media) {
+        // 2. Delete from Supabase Storage
+        // We need the filename from the URL or name. Usually, we should store the storage_path.
+        // For now, let's try to extract it from the URL or name if possible.
+        // Assuming the file name in storage matches what was uploaded.
+        // Based on our upload logic: fileName = `${Date.now()}-${req.file.originalname}`
+        const storagePath = media.url.split('/').pop();
+        if (storagePath) {
+            await supabase.storage.from('media').remove([storagePath]);
+        }
+
+        // 3. Delete from Supabase Database
+        const { error: dbError } = await supabase
+            .from('media')
+            .delete()
+            .eq('id', id)
+            .eq('client_id', CLIENT_ID);
+        
+        if (dbError) return res.status(500).json({ error: dbError });
+    }
+
+    // 4. Update local JSON for safety
     const db = readDB();
-    db.media = db.media.filter(m => m.id !== req.params.id);
+    db.media = (db.media || []).filter(m => m.id !== id);
     writeDB(db);
+
+    io.emit('media-updated');
     res.status(204).send();
 });
 
