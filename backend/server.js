@@ -94,7 +94,11 @@ app.post('/screens', async (req, res) => {
     };
 
     const { error } = await supabase.from('screens').insert(screen);
-    if (error) return res.status(500).json({ error });
+    if (error) {
+        logger.error({ error, screen }, 'Failed to insert screen into Supabase');
+        return res.status(500).json({ error });
+    }
+    logger.info({ screenId: screen.id }, 'Screen inserted successfully');
     res.json(screen);
 });
 
