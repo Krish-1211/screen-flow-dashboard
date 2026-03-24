@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { io, Socket } from 'socket.io-client';
 import { versionManager } from './versionManager';
 import { playlistStore } from '../storage/playlistStore';
 import type { Playlist } from '@/types';
@@ -17,6 +18,7 @@ export class SyncManager {
   private onSyncActivity: (isSyncing: boolean) => void;
   private isRunning = false;
   private loopPromise: Promise<void> | null = null;
+  private socket: Socket | null = null;
   private ticksSinceFullFetch = 0;
 
   constructor(
@@ -59,17 +61,28 @@ export class SyncManager {
   public startSyncLoop() {
     if (this.loopPromise) return;
     this.isRunning = true;
+
+    // Real-time Push via Sockets
+    this.socket = io(this.apiBaseUrl);
+    this.socket.on('playlist-updated', () => {
+      console.info('[player] real-time update received via socket');
+      void this.forceFullSync();
+    });
+
     this.loopPromise = this.runLoop();
   }
 
   public stop() {
     this.isRunning = false;
+    this.socket?.disconnect();
+    this.socket = null;
   }
 
   private async runLoop() {
     while (this.isRunning) {
       await this.checkAndSync();
-      await this.sleep(75000);
+      // Polling fallback (5 minutes as requested)
+      await this.sleep(5 * 60 * 1000);
     }
     this.loopPromise = null;
   }
@@ -117,7 +130,6 @@ export class SyncManager {
     if (etag) {
       return etag;
     }
-    // If ETag is unavailable, force periodic fallback full fetch.
     return `unknown-${Date.now()}`;
   }
 
