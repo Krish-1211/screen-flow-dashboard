@@ -69,14 +69,17 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   };
 
   useEffect(() => {
-    // Emergency failsafe interval: If video is stuck in ended state, restart it.
+    // Failsafe watchdog: If video is stuck in ended state, restart it.
     const interval = setInterval(() => {
       const activeVideo = activeLayer === 'A' ? videoRefA.current : videoRefB.current;
-      if (activeVideo && activeVideo.ended) {
-        console.warn("[player] Watchdog: Video ended but didn't advance, forcing hard restart...");
-        void playVideoSafe(activeVideo);
+      if (activeVideo) {
+        console.log(`[player] Watchdog Check - ended: ${activeVideo.ended}, currentTime: ${activeVideo.currentTime}`);
+        if (activeVideo.ended) {
+          console.warn("[player] Video stuck in ended state. Restarting...");
+          void playVideoSafe(activeVideo);
+        }
       }
-    }, 1000);
+    }, 2000);
     return () => clearInterval(interval);
   }, [activeLayer]);
 
