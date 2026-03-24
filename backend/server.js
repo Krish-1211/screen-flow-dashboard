@@ -553,35 +553,30 @@ app.get('/screens/player', async (req, res) => {
     const mediaMap = {};
     mediaList.forEach(m => { mediaMap[m.id] = m; });
 
-    const enrichedItems = (playlist.items || []).map(item => {
-        const media = mediaMap[item.mediaId];
-        if (!media) {
-            logger.warn({ mediaId: item.mediaId, playlistId: playlist.id }, 'Media missing for playlist item');
-        }
-        return {
-            ...item,
-            media: media
-        };
-    });
+    // Pre-declare and enrich items
+    let items = (playlist.items || []).map(item => ({
+        ...item,
+        media: mediaMap[item.mediaId]
+    }));
 
-    // Step 2 & 3: Inject gap item ONLY for the player if it's a solo video
-    // 1 second duration, invisible to user's dashboard (which uses different routes)
-    if (enrichedItems.length === 1 && enrichedItems[0].media?.type === 'video') {
-        enrichedItems.push({
+    // Detect solo video and inject persistent gap
+    if (items.length === 1 && items[0].media?.type === 'video') {
+        const gapMedia = {
+            id: 'system-gap',
+            name: 'System Gap',
+            type: 'system_gap',
+            url: '/black-screen.svg'
+        };
+        items.push({
             id: 'system-gap',
             mediaId: 'system-gap',
             order: 999,
-            duration: 1, // 1 second
-            media: {
-                id: 'system-gap',
-                name: 'System Gap',
-                type: 'system_gap',
-                url: '/black-screen.svg'
-            }
+            duration: 1, // 1.0 second
+            media: gapMedia
         });
     }
 
-    res.json({ ...playlist, items: enrichedItems });
+    res.json({ ...playlist, items: items });
 });
 
 app.post('/screens/heartbeat', async (req, res) => {
