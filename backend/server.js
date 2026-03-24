@@ -553,10 +553,16 @@ app.get('/screens/player', async (req, res) => {
     const mediaMap = {};
     mediaList.forEach(m => { mediaMap[m.id] = m; });
 
-    const enrichedItems = (playlist.items || []).map(item => ({
-        ...item,
-        media: mediaMap[item.mediaId]
-    })).filter(it => it.media);
+    const enrichedItems = (playlist.items || []).map(item => {
+        const media = mediaMap[item.mediaId];
+        if (!media) {
+            logger.warn({ mediaId: item.mediaId, playlistId: playlist.id }, 'Media missing for playlist item');
+        }
+        return {
+            ...item,
+            media: media
+        };
+    });
 
     res.json({ ...playlist, items: enrichedItems });
 });

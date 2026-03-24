@@ -37,20 +37,39 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   const playVideoSafe = async (video: HTMLVideoElement | null) => {
     if (!video) return;
     try {
-      console.log("[player] Attempting to play unmuted video");
-      video.currentTime = 0; // Essential for looping same content
-      video.muted = false;
-      await video.play();
+      console.log("[player] Resetting and playing video...");
+      video.pause();
+      video.currentTime = 0;
+      video.load(); // Force a clean state
+
+      // Using setTimeout to ensure the browser has processed the load() call
+      setTimeout(async () => {
+        try {
+          video.muted = false;
+          await video.play();
+          console.log("[player] Playback started successfully");
+        } catch (err) {
+          console.warn('[player] Autoplay unmuted blocked, falling back to muted');
+          video.muted = true;
+          await video.play().catch(e => console.error('[player] Playback failed even when muted', e));
+        }
+      }, 100);
     } catch (err) {
-      console.warn('[player] autoplay unmuted blocked, falling back to muted');
-      video.muted = true;
-      try {
-        await video.play();
-      } catch (e) {
-        console.error('[player] critical video play failure', e);
-      }
+      console.error('[player] Error in playVideoSafe', err);
     }
   };
+
+  useEffect(() => {
+    // Failsafe interval: If video is stuck in ended state, restart it.
+    const interval = setInterval(() => {
+      const activeVideo = activeLayer === 'A' ? videoRefA.current : videoRefB.current;
+      if (activeVideo && activeVideo.ended) {
+        console.warn("[player] Failsafe: Video ended but didn't advance, restarting...");
+        void playVideoSafe(activeVideo);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [activeLayer]);
 
   useEffect(() => {
     console.log("Device ID (local):", localStorage.getItem("sf_device_id"));
@@ -276,6 +295,15 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
       if (noContentRetryTimeoutRef.current) clearTimeout(noContentRetryTimeoutRef.current);
     };
   }, [playlistItems, itemA.item, itemB.item, activeLayer]);
+
+  useEffect(() => {
+    console.log("[player] Active Playlist Items:", playlistItems);
+    const engine = engineRef.current;
+    if (engine) {
+      const status = engine.getStatus();
+      console.log(`[player] Current Status: index ${status.currentIndex}, length ${status.playlistLength}, loopRunning ${status.loopRunning}`);
+    }
+  }, [playlistItems, activeLayer]);
 
   useEffect(() => {
     const scheduleWatchdog = () => {
