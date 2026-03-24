@@ -85,6 +85,57 @@ app.delete('/screens/:id', (req, res) => {
     res.status(204).send();
 });
 
+app.post('/screens/register', (req, res) => {
+    const db = readDB();
+    const { deviceId, name, playlist_id } = req.body;
+    let screen = db.screens.find(s => s.device_id === deviceId || s.deviceId === deviceId);
+    
+    if (screen) {
+        screen.name = name || screen.name;
+        screen.playlistId = playlist_id || screen.playlistId;
+    } else {
+        screen = { 
+            id: Date.now().toString(), 
+            device_id: deviceId, 
+            name: name || "New Screen", 
+            playlistId: playlist_id,
+            status: 'online', 
+            lastPing: new Date().toISOString() 
+        };
+        db.screens.push(screen);
+    }
+    writeDB(db);
+    res.json(screen);
+});
+
+// GROUPS
+app.get('/groups', (req, res) => {
+    const db = readDB();
+    const groups = db.groups || [];
+    res.json(groups.map(g => ({
+        ...g,
+        screen_count: db.screens.filter(s => s.groupId === g.id).length
+    })));
+});
+
+app.post('/groups', (req, res) => {
+    const db = readDB();
+    if (!db.groups) db.groups = [];
+    const group = { id: Date.now().toString(), name: req.body.name };
+    db.groups.push(group);
+    writeDB(db);
+    res.json(group);
+});
+
+app.delete('/groups/:id', (req, res) => {
+    const db = readDB();
+    db.groups = (db.groups || []).filter(g => g.id !== req.params.id);
+    // Unassign screens from this group
+    db.screens.forEach(s => { if (s.groupId === req.params.id) delete s.groupId; });
+    writeDB(db);
+    res.status(204).send();
+});
+
 // MEDIA
 app.get('/media', (req, res) => res.json(getSection('media')));
 app.post('/media/upload', upload.single('file'), (req, res) => {
