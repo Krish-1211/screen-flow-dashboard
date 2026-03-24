@@ -36,38 +36,47 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
 
   const playVideoSafe = async (video: HTMLVideoElement | null) => {
     if (!video) return;
+    if (!video.src) {
+      console.error("[player] Video src missing, cannot play");
+      return;
+    }
+
     try {
-      console.log("[player] Resetting and playing video...");
+      console.log(`[player] Hard reset triggered - CURRENT TIME: ${video.currentTime}, DURATION: ${video.duration}`);
+      
       video.pause();
       video.currentTime = 0;
-      video.load(); // Force a clean state
+      
+      // Force reload to clear browser ended state
+      const originalSrc = video.src;
+      video.src = originalSrc;
+      video.load();
 
-      // Using setTimeout to ensure the browser has processed the load() call
       setTimeout(async () => {
         try {
           video.muted = false;
           await video.play();
-          console.log("[player] Playback started successfully");
+          console.log("[player] Playback restarted successfully");
         } catch (err) {
           console.warn('[player] Autoplay unmuted blocked, falling back to muted');
           video.muted = true;
           await video.play().catch(e => console.error('[player] Playback failed even when muted', e));
         }
-      }, 100);
+      }, 150);
     } catch (err) {
       console.error('[player] Error in playVideoSafe', err);
     }
   };
 
   useEffect(() => {
-    // Failsafe interval: If video is stuck in ended state, restart it.
+    // Emergency failsafe interval: If video is stuck in ended state, restart it.
     const interval = setInterval(() => {
       const activeVideo = activeLayer === 'A' ? videoRefA.current : videoRefB.current;
       if (activeVideo && activeVideo.ended) {
-        console.warn("[player] Failsafe: Video ended but didn't advance, restarting...");
+        console.warn("[player] Watchdog: Video ended but didn't advance, forcing hard restart...");
         void playVideoSafe(activeVideo);
       }
-    }, 2000);
+    }, 1000);
     return () => clearInterval(interval);
   }, [activeLayer]);
 
@@ -183,10 +192,18 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     const engine = new PlayerEngine(async (item) => {
       const url = await mediaCache.getMediaSource(item.media?.url || '');
       
-      // If same item is re-playing (looping same media), increment cycle to force refresh
-      const isLoop = (activeLayer === 'A' ? itemA : itemB).item?.id === item.id;
+      const currentItem = (activeLayer === 'A' ? itemA : itemB).item;
+      const isLoop = currentItem?.id === item.id;
+      
       if (isLoop) {
+        console.log("[player] Solo loop detected, skipping layer swap and restarting current media.");
+        const activeVideo = activeLayer === 'A' ? videoRefA.current : videoRefB.current;
+        if (item.media?.type === 'video' && activeVideo) {
+          void playVideoSafe(activeVideo);
+        }
+        // Even if not a video, increment cycle for potential UI needs
         setPlaybackCycle(prev => prev + 1);
+        return;
       }
 
       setActiveLayer((current) => {
@@ -197,8 +214,8 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
           setItemB({ item, url });
         }
         return next;
-      });
-    });
+       });
+     });
 
     const handleSyncStatus = (status: SyncStatus) => {
       setIsOffline(!status.online);
@@ -265,6 +282,12 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   }, [activeLayer, itemA.item, itemB.item, playlistItems]);
 
   const handleVideoEnded = () => {
+    const video = activeLayer === 'A' ? videoRefA.current : videoRefB.current;
+    if (video) {
+        console.log("ENDED FIRED");
+        console.log("CURRENT TIME:", video.currentTime);
+        console.log("DURATION:", video.duration);
+    }
     console.log("[player] VIDEO ENDED, advancing engine...");
     engineRef.current?.onMediaEnded();
   };
@@ -386,6 +409,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
             className="w-full h-full object-contain"
             autoPlay
             playsInline
+            preload="auto"
             onEnded={layer === activeLayer ? handleVideoEnded : undefined}
             onError={layer === activeLayer ? handleMediaError : undefined}
           />
