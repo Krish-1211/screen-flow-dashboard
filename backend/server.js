@@ -61,6 +61,25 @@ const saveSection = (name, data) => {
     writeDB(db);
 };
 
+// ── Step 5: Diagnostics ──
+async function checkSupabase() {
+    try {
+        const { data: buckets, error } = await supabase.storage.listBuckets();
+        if (error) {
+            logger.error({ error }, 'Supabase Storage Diagnostics Failed');
+        } else {
+            const hasMedia = buckets.some(b => b.name === 'media');
+            logger.info({ buckets: buckets.map(b => b.name) }, `Supabase Connected. Bucket 'media' exists: ${hasMedia}`);
+            if (!hasMedia) {
+                logger.warn('Bucket "media" NOT FOUND. Uploads will fail until created in Supabase dashboard.');
+            }
+        }
+    } catch (e) {
+        logger.error({ error: e }, 'Supabase Connection Error');
+    }
+}
+checkSupabase();
+
 // SCREENS
 // SCREENS
 app.get('/screens', async (req, res) => {
@@ -251,6 +270,7 @@ app.delete('/groups/:id', (req, res) => {
 
 // MEDIA
 app.get('/media', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
     const { data, error } = await supabase
         .from('media')
         .select('*')
@@ -260,10 +280,18 @@ app.get('/media', async (req, res) => {
     res.json(data);
 });
 
+const sanitizeFileName = (name) => {
+    return name
+        .normalize("NFKD")                  // remove weird unicode
+        .replace(/[^\w.-]/g, "_")           // replace anything not safe
+        .replace(/_+/g, "_");               // collapse multiple _
+};
+
 app.post('/media/upload', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file" });
 
-    const fileName = `${Date.now()}-${req.file.originalname}`;
+    const cleanName = sanitizeFileName(req.file.originalname);
+    const fileName = `${Date.now()}-${cleanName}`;
 
     const { error: uploadError } = await supabase.storage
         .from('media')
