@@ -36,6 +36,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   const playVideoSafe = async (video: HTMLVideoElement | null) => {
     if (!video) return;
     try {
+      video.currentTime = 0; // Essential for looping same content
       video.muted = false;
       await video.play();
     } catch (err) {
@@ -338,6 +339,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
       >
         {isVideo ? (
           <video
+            key={`${layer}-${data.item.id}`}
             ref={layer === 'A' ? videoRefA : videoRefB}
             src={data.url}
             className="w-full h-full object-contain"
@@ -348,6 +350,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
           />
         ) : (
           <img
+            key={`${layer}-${data.item.id}`}
             src={data.url}
             className="w-full h-full object-contain"
             alt="Content"
