@@ -123,10 +123,18 @@ export class SyncManager {
 
   private applyPlaylist(playlist: Playlist): void {
     if (!playlist || !Array.isArray(playlist.items)) return;
-    playlistStore.save(playlist);
-    versionManager.set(playlist.updatedAt || new Date().toISOString());
-    console.info('[player] playlist persisted locally');
-    this.onUpdate(playlist);
+
+    const cached = playlistStore.get();
+    const hasChanged = !cached || JSON.stringify(playlist) !== JSON.stringify(cached.playlist);
+
+    if (hasChanged) {
+      playlistStore.save(playlist);
+      versionManager.set(playlist.updatedAt || new Date().toISOString());
+      console.info('[player] playlist changed, persisted locally');
+      this.onUpdate(playlist);
+    } else {
+      console.info('[player] playlist unchanged, skipping update');
+    }
   }
 
   private isStale(lastSuccessAt: number | null): boolean {
