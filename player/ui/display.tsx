@@ -14,6 +14,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   const [activeLayer, setActiveLayer] = useState<'A' | 'B'>('A');
   const [itemA, setItemA] = useState<{ item: PlaylistItem | null, url: string }>({ item: null, url: '' });
   const [itemB, setItemB] = useState<{ item: PlaylistItem | null, url: string }>({ item: null, url: '' });
+  const [playbackCycle, setPlaybackCycle] = useState(0);
   
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [state, setState] = useState<PlayerState>(PlayerState.IDLE);
@@ -158,6 +159,12 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     const engine = new PlayerEngine(async (item) => {
       const url = await mediaCache.getMediaSource(item.media?.url || '');
       
+      // If same item is re-playing (looping same media), increment cycle to force refresh
+      const isLoop = (activeLayer === 'A' ? itemA : itemB).item?.id === item.id;
+      if (isLoop) {
+        setPlaybackCycle(prev => prev + 1);
+      }
+
       setActiveLayer((current) => {
         const next = current === 'A' ? 'B' : 'A';
         if (next === 'A') {
@@ -339,7 +346,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
       >
         {isVideo ? (
           <video
-            key={`${layer}-${data.item.id}`}
+            key={`${layer}-${data.item.id}-${playbackCycle}`}
             ref={layer === 'A' ? videoRefA : videoRefB}
             src={data.url}
             className="w-full h-full object-contain"
@@ -350,7 +357,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
           />
         ) : (
           <img
-            key={`${layer}-${data.item.id}`}
+            key={`${layer}-${data.item.id}-${playbackCycle}`}
             src={data.url}
             className="w-full h-full object-contain"
             alt="Content"
