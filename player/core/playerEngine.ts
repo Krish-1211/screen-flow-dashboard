@@ -16,7 +16,25 @@ export class PlayerEngine {
   }
 
   public replacePlaylist(pl: Playlist) {
-    const newItems = pl.items || [];
+    let newItems = [...(pl.items || [])];
+    
+    // Step 1: Inject gap item at runtime for single-item playlists
+    if (newItems.length === 1) {
+      console.info('[player] Single-item playlist detected, injecting system gap');
+      newItems.push({
+        id: 'system-gap',
+        mediaId: 'system-gap',
+        order: 999,
+        duration: 0.3, // 0.3 seconds = 300ms
+        media: {
+          id: 'system-gap',
+          name: 'System Gap',
+          type: 'system_gap',
+          url: '/black-screen.svg'
+        }
+      });
+    }
+
     if (JSON.stringify(newItems) === JSON.stringify(this.playlist)) {
       return;
     }
@@ -41,7 +59,7 @@ export class PlayerEngine {
     }
     console.info('[player] playback start');
     this.shouldRun = true;
-    this.wakeLoop();
+    this.clearPendingWait(); // Ensure we don't carry over old waits
     void this.runLoop();
   }
 
@@ -52,7 +70,7 @@ export class PlayerEngine {
 
     while (this.shouldRun && token === this.loopToken) {
       if (this.playlist.length === 0) {
-        await this.waitForAdvance();
+        await this.waitForAdvance(2000); // Wait 2s before checking again
         continue;
       }
 
@@ -61,6 +79,9 @@ export class PlayerEngine {
 
       if (item?.media?.type === 'video') {
         await this.waitForAdvance();
+      } else if (item?.media?.type === 'system_gap') {
+        const durationMs = (item.duration || 0.3) * 1000;
+        await this.waitForAdvance(durationMs);
       } else {
         const durationMs = Math.max(1, item?.duration || 10) * 1000;
         await this.waitForAdvance(durationMs);

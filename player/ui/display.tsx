@@ -396,6 +396,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     if (!data.item) return null;
     
     const isVideo = data.item.media?.type === 'video';
+    const isGap = data.item.media?.type === 'system_gap';
     const isVisible = activeLayer === layer;
 
     return (
@@ -404,7 +405,9 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
         className="fade-item"
         style={{ opacity: isVisible ? 1 : 0, zIndex: isVisible ? 2 : 1 }}
       >
-        {isVideo ? (
+        {isGap ? (
+          <div className="w-full h-full bg-black" />
+        ) : isVideo ? (
           <video
             key={`${layer}-${data.item.id}-${playbackCycle}`}
             ref={layer === 'A' ? videoRefA : videoRefB}
