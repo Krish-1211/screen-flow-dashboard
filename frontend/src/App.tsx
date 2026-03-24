@@ -9,17 +9,17 @@ import { Button } from "@/components/ui/button";
 import { ThemeProvider } from "@/components/theme-provider";
 import { syncService } from "@/services/sync-service";
 
-const DashboardPage = lazy(() => import("@/pages/dashboard/index"));
-const ScreensPage = lazy(() => import("@/pages/screens/index"));
-const MediaLibraryPage = lazy(() => import("@/pages/media/index"));
-const PlaylistsPage = lazy(() => import("@/pages/playlists/index"));
-const SchedulesPage = lazy(() => import("@/pages/schedules/index"));
-const DisplayPlayerPage = lazy(() => import("@/pages/display/index"));
-const BillingPage = lazy(() => import("@/pages/billing/index"));
-const SettingsPage = lazy(() => import("@/pages/settings/index"));
-const AuditLogPage = lazy(() => import("@/pages/audit/index"));
-const LoginPage = lazy(() => import("@/pages/login/index"));
-const NotFound = lazy(() => import("@/pages/not-found/index"));
+const DashboardPage = lazy(() => import("@/pages/dashboard"));
+const ScreensPage = lazy(() => import("@/pages/screens"));
+const MediaLibraryPage = lazy(() => import("@/pages/media"));
+const PlaylistsPage = lazy(() => import("@/pages/playlists"));
+const SchedulesPage = lazy(() => import("@/pages/schedules"));
+const DisplayPlayerPage = lazy(() => import("@/pages/display"));
+const BillingPage = lazy(() => import("@/pages/billing"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
+const AuditLogPage = lazy(() => import("@/pages/audit"));
+const LoginPage = lazy(() => import("@/pages/login"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
