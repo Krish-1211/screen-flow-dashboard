@@ -37,6 +37,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   const playVideoSafe = async (video: HTMLVideoElement | null) => {
     if (!video) return;
     try {
+      console.log("[player] Attempting to play unmuted video");
       video.currentTime = 0; // Essential for looping same content
       video.muted = false;
       await video.play();
@@ -50,6 +51,10 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
       }
     }
   };
+
+  useEffect(() => {
+    console.log("Device ID (local):", localStorage.getItem("sf_device_id"));
+  }, []);
 
   useEffect(() => {
     currentItemRef.current = (activeLayer === 'A' ? itemA : itemB).item;
@@ -241,6 +246,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   }, [activeLayer, itemA.item, itemB.item, playlistItems]);
 
   const handleVideoEnded = () => {
+    console.log("[player] VIDEO ENDED, advancing engine...");
     engineRef.current?.onMediaEnded();
   };
 

@@ -423,6 +423,7 @@ app.delete('/schedules/:id', async (req, res) => {
 
 // PLAYER Heartbeat & Playlist Discovery
 app.get('/screens/player', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
     const { device_id } = req.query;
 
     const { data: screen, error: screenError } = await supabase
