@@ -46,7 +46,7 @@ __pycache__/
 .pytest_cache/
 
 # App Specific
-media/
+/media/
 backend/app/media/
 backend/app/__pycache__/
 backend/app/models/__pycache__/
