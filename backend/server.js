@@ -62,67 +62,111 @@ const saveSection = (name, data) => {
 };
 
 // SCREENS
-app.get('/screens', (req, res) => {
-    const db = readDB();
-    const screens = db.screens || [];
-    res.json(screens.map(s => ({
+// SCREENS
+app.get('/screens', async (req, res) => {
+    const { data, error } = await supabase
+        .from('screens')
+        .select('*')
+        .eq('client_id', CLIENT_ID);
+
+    if (error) return res.status(500).json({ error });
+
+    // Map Supabase fields back to what the frontend expects
+    const normalized = (data || []).map(s => ({
         ...s,
-        deviceId: s.device_id || s.deviceId || s.id, // Normalize for frontend
-        device_id: s.device_id || s.deviceId || s.id
-    })));
+        playlistId: s.playlist_id,
+        lastPing: s.last_ping,
+        deviceId: s.device_id,
+        device_id: s.device_id
+    }));
+    res.json(normalized);
 });
-app.post('/screens', (req, res) => {
-    const db = readDB();
-    const screen = { id: Date.now().toString(), ...req.body, status: 'online', lastPing: new Date().toISOString() };
-    db.screens.push(screen);
-    writeDB(db);
+
+app.post('/screens', async (req, res) => {
+    const screen = {
+        id: Date.now().toString(),
+        client_id: CLIENT_ID,
+        device_id: req.body.device_id || req.body.deviceId,
+        name: req.body.name,
+        status: 'online',
+        playlist_id: req.body.playlistId || req.body.playlist_id,
+        last_ping: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from('screens').insert(screen);
+    if (error) return res.status(500).json({ error });
     res.json(screen);
 });
-app.put('/screens/:id', (req, res) => {
-    const db = readDB();
-    const idx = db.screens.findIndex(s => s.id === req.params.id);
-    if (idx > -1) {
-        // Map playlist_id to playlistId for internal consistency
-        const updateData = { ...req.body };
-        if (updateData.playlist_id) {
-            updateData.playlistId = updateData.playlist_id;
-        }
-        
-        db.screens[idx] = { ...db.screens[idx], ...updateData };
-        writeDB(db);
-        io.emit('playlist-updated');
-        return res.json(db.screens[idx]);
-    }
-    res.status(404).json({ error: "Not found" });
+
+app.put('/screens/:id', async (req, res) => {
+    const updates = {
+        name: req.body.name,
+        playlist_id: req.body.playlistId || req.body.playlist_id,
+        status: req.body.status,
+        last_ping: new Date().toISOString()
+    };
+
+    const { data, error } = await supabase
+        .from('screens')
+        .update(updates)
+        .eq('id', req.params.id)
+        .eq('client_id', CLIENT_ID)
+        .select()
+        .single();
+
+    if (error) return res.status(500).json({ error });
+    io.emit('playlist-updated');
+    res.json(data);
 });
-app.delete('/screens/:id', (req, res) => {
-    const db = readDB();
-    db.screens = db.screens.filter(s => s.id !== req.params.id);
-    writeDB(db);
+
+app.delete('/screens/:id', async (req, res) => {
+    const { error } = await supabase
+        .from('screens')
+        .delete()
+        .eq('id', req.params.id)
+        .eq('client_id', CLIENT_ID);
+
+    if (error) return res.status(500).json({ error });
     res.status(204).send();
 });
 
-app.post('/screens/register', (req, res) => {
-    const db = readDB();
+app.post('/screens/register', async (req, res) => {
     const { deviceId, name, playlist_id } = req.body;
-    let screen = db.screens.find(s => s.device_id === deviceId || s.deviceId === deviceId);
-    
-    if (screen) {
-        screen.name = name || screen.name;
-        screen.playlistId = playlist_id || screen.playlistId;
+    const { data: existing } = await supabase
+        .from('screens')
+        .select('*')
+        .eq('client_id', CLIENT_ID)
+        .eq('device_id', deviceId)
+        .maybeSingle();
+
+    if (existing) {
+        const { data: updated, error } = await supabase
+            .from('screens')
+            .update({ 
+                name: name || existing.name, 
+                playlist_id: playlist_id || existing.playlist_id,
+                status: 'online',
+                last_ping: new Date().toISOString()
+            })
+            .eq('id', existing.id)
+            .select()
+            .single();
+        if (error) return res.status(500).json({ error });
+        return res.json(updated);
     } else {
-        screen = { 
-            id: Date.now().toString(), 
-            device_id: deviceId, 
-            name: name || "New Screen", 
-            playlistId: playlist_id,
-            status: 'online', 
-            lastPing: new Date().toISOString() 
+        const newScreen = {
+            id: Date.now().toString(),
+            client_id: CLIENT_ID,
+            device_id: deviceId,
+            name: name || "New Screen",
+            playlist_id: playlist_id,
+            status: 'online',
+            last_ping: new Date().toISOString()
         };
-        db.screens.push(screen);
+        const { error } = await supabase.from('screens').insert(newScreen);
+        if (error) return res.status(500).json({ error });
+        res.json(newScreen);
     }
-    writeDB(db);
-    res.json(screen);
 });
 
 // GROUPS
@@ -309,17 +353,22 @@ app.post('/schedules', (req, res) => {
 // PLAYER Heartbeat & Playlist Discovery
 app.get('/screens/player', async (req, res) => {
     const { device_id } = req.query;
-    const db = readDB();
-    const screen = db.screens.find(s => s.device_id === device_id || s.id === device_id);
+
+    const { data: screen, error: screenError } = await supabase
+        .from('screens')
+        .select('*')
+        .eq('client_id', CLIENT_ID)
+        .or(`device_id.eq.${device_id},id.eq.${device_id}`)
+        .maybeSingle();
     
-    if (!screen) {
+    if (screenError || !screen) {
         return res.json({ name: "Fallback", items: [] });
     }
 
     const { data: playlists, error: plError } = await supabase
         .from('playlists')
         .select('*')
-        .eq('id', screen.playlistId)
+        .eq('id', screen.playlist_id)
         .eq('client_id', CLIENT_ID);
 
     if (plError || !playlists || playlists.length === 0) return res.json({ name: "No Content", items: [] });
@@ -345,15 +394,18 @@ app.get('/screens/player', async (req, res) => {
     res.json({ ...playlist, items: enrichedItems });
 });
 
-app.post('/screens/heartbeat', (req, res) => {
+app.post('/screens/heartbeat', async (req, res) => {
     const { device_id } = req.body;
-    const db = readDB();
-    const idx = db.screens.findIndex(s => s.device_id === device_id || s.id === device_id);
-    if (idx > -1) {
-        db.screens[idx].status = 'online';
-        db.screens[idx].lastPing = new Date().toISOString();
-        writeDB(db);
-    }
+    const { error } = await supabase
+        .from('screens')
+        .update({
+            status: 'online',
+            last_ping: new Date().toISOString()
+        })
+        .eq('device_id', device_id)
+        .eq('client_id', CLIENT_ID);
+
+    if (error) return res.status(500).json({ error });
     res.status(204).send();
 });
 
