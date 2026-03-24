@@ -71,7 +71,13 @@ app.put('/screens/:id', (req, res) => {
     const db = readDB();
     const idx = db.screens.findIndex(s => s.id === req.params.id);
     if (idx > -1) {
-        db.screens[idx] = { ...db.screens[idx], ...req.body };
+        // Map playlist_id to playlistId for internal consistency
+        const updateData = { ...req.body };
+        if (updateData.playlist_id) {
+            updateData.playlistId = updateData.playlist_id;
+        }
+        
+        db.screens[idx] = { ...db.screens[idx], ...updateData };
         writeDB(db);
         io.emit('playlist-updated');
         return res.json(db.screens[idx]);
