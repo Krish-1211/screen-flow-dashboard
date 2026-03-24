@@ -59,7 +59,15 @@ const saveSection = (name, data) => {
 };
 
 // SCREENS
-app.get('/screens', (req, res) => res.json(getSection('screens')));
+app.get('/screens', (req, res) => {
+    const db = readDB();
+    const screens = db.screens || [];
+    res.json(screens.map(s => ({
+        ...s,
+        deviceId: s.device_id || s.deviceId || s.id, // Normalize for frontend
+        device_id: s.device_id || s.deviceId || s.id
+    })));
+});
 app.post('/screens', (req, res) => {
     const db = readDB();
     const screen = { id: Date.now().toString(), ...req.body, status: 'online', lastPing: new Date().toISOString() };
