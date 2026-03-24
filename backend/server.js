@@ -114,6 +114,20 @@ app.delete('/screens/:id', async (req, res) => {
     res.status(204).send();
 });
 
+app.put('/screens/bulk', async (req, res) => {
+    try {
+        const { screen_ids, playlist_id } = req.body;
+        const count = await prisma.screen.updateMany({
+            where: { id: { in: screen_ids } },
+            data: { currentPlaylistId: playlist_id }
+        });
+        io.emit('playlist-updated');
+        res.json({ updated: count.count, playlist_id });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ── Step 6: Groups API ──
 app.get('/groups', async (req, res) => {
     const groups = await prisma.group.findMany({
@@ -165,6 +179,46 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
         res.json(enrichMedia(media));
     } catch (e) {
         res.status(500).json({ error: "Failed to upload file" });
+    }
+});
+
+app.post('/media/youtube', async (req, res) => {
+    try {
+        const { url, name } = req.body;
+        const media = await prisma.media.create({
+            data: {
+                name: name || "YouTube Video",
+                type: 'youtube',
+                url: url,
+            }
+        });
+        io.emit('playlist-updated');
+        res.json(enrichMedia(media));
+    } catch (e) {
+        res.status(500).json({ error: "Failed to add YouTube video" });
+    }
+});
+
+app.patch('/media/:id/rename', async (req, res) => {
+    try {
+        const { name } = req.body;
+        const media = await prisma.media.update({
+            where: { id: req.params.id },
+            data: { name }
+        });
+        res.json(enrichMedia(media));
+    } catch (e) {
+        res.status(500).json({ error: "Failed to rename media" });
+    }
+});
+
+app.delete('/media/:id', async (req, res) => {
+    try {
+        await prisma.media.delete({ where: { id: req.params.id } });
+        io.emit('playlist-updated');
+        res.status(204).send();
+    } catch (e) {
+        res.status(500).json({ error: "Failed to delete media" });
     }
 });
 
