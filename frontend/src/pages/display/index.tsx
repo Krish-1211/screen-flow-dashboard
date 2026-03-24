@@ -317,6 +317,7 @@ export default function DisplayPlayerPage() {
   const currentItem = playlist.items[currentIndex];
   const isVideo = currentItem?.media?.type === 'video';
   const isYoutube = currentItem?.media?.type === 'youtube';
+  const isGap = currentItem?.media?.type === 'system_gap';
   const mediaUrl = currentItem?.media?.url || '';
 
   const getYoutubeEmbedUrl = (url: string) => {
@@ -351,7 +352,9 @@ export default function DisplayPlayerPage() {
             transition: 'opacity 200ms ease'
           }}
         >
-          {isYoutube ? (
+          {isGap ? (
+            <div className="w-full h-full bg-black" />
+          ) : isYoutube ? (
             <iframe
               key={currentItem.id}
               src={getYoutubeEmbedUrl(mediaUrl)}
@@ -361,13 +364,14 @@ export default function DisplayPlayerPage() {
             />
           ) : isVideo ? (
             <video
-              key={currentItem.id}
+              key={`${currentItem.id}-${currentIndex}`} // Unique key to force re-render
               ref={videoRef}
               src={mediaUrl}
               className="w-full h-full object-contain"
               autoPlay
               playsInline
               muted={muted}
+              preload="auto"
               onError={handleMediaError}
               onEnded={advanceMedia}
             />

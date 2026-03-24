@@ -24,7 +24,7 @@ export interface Screen {
 export interface Media {
     id: number | string;
     name: string;
-    type: 'image' | 'video' | 'youtube';
+    type: 'image' | 'video' | 'youtube' | 'system_gap';
     url: string;
     duration?: number;
     thumbnail?: string;
