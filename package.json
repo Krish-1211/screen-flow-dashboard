@@ -23,7 +23,7 @@
     "vite": "^6.1.1",
     "vitest": "^2.1.8",
     "concurrently": "^9.2.1",
-    "prisma": "^7.5.0"
+    "prisma": "5.22.0"
   },
   "prisma": {
     "schema": "backend/prisma/schema.prisma"
@@ -40,6 +40,6 @@
     "@swc/core-linux-x64-musl": "*"
   },
   "dependencies": {
-    "@prisma/client": "^7.5.0"
+    "@prisma/client": "5.22.0"
   }
 }
