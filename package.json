@@ -1,10 +1,11 @@
 {
   "name": "screenflow-monorepo",
   "private": true,
+  "type": "module",
   "workspaces": [
-    "backend",
     "frontend",
-    "player"
+    "player",
+    "backend"
   ],
   "scripts": {
     "dev:backend": "npm run dev --workspace=backend",
@@ -12,34 +13,10 @@
     "dev:player": "npm run dev --workspace=player",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:player\"",
     "build": "npm run build --workspaces",
-    "build:all": "npm run build --workspaces",
     "start": "npm start --workspace=backend",
-    "db:push": "npm run db:push --workspace=backend",
-    "db:generate": "npm run db:generate --workspace=backend",
-    "postinstall": "npm run db:generate --workspace=backend"
+    "install:all": "npm install"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.1.1",
-    "vitest": "^2.1.8",
-    "concurrently": "^9.2.1"
-  },
-  "prisma": {
-    "schema": "backend/prisma/schema.prisma"
-  },
-  "optionalDependencies": {
-    "@esbuild/linux-arm64": "*",
-    "@esbuild/linux-x64": "*",
-    "@rollup/rollup-linux-arm64-gnu": "*",
-    "@rollup/rollup-linux-x64-gnu": "*",
-    "@rollup/rollup-linux-x64-musl": "*",
-    "@swc/core-linux-arm64-gnu": "*",
-    "@swc/core-linux-arm64-musl": "*",
-    "@swc/core-linux-x64-gnu": "*",
-    "@swc/core-linux-x64-musl": "*"
-  },
-  "dependencies": {
-    "@prisma/client": "5.22.0",
-    "prisma": "5.22.0"
+    "concurrently": "^9.1.0"
   }
 }

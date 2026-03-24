@@ -8,11 +8,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-
-// Modular Imports
-import prisma from './src/db/client.js';
-import { playerController } from './src/controllers/playerController.js';
-import { getActivePlaylist, enrichPlaylistData, enrichMedia } from './src/scheduler/engine.js';
+import { readDB, writeDB } from './src/lib/storage.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const app = express();
@@ -23,11 +19,7 @@ const io = new Server(httpServer, {
 const upload = multer();
 
 // ── Step 1: Middleware ──
-app.use(cors({
-    origin: ["https://screenflow-dashboard.onrender.com", "http://localhost:5173", "http://localhost:3000"],
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-}));
+app.use(cors());
 app.use(express.json());
 app.use(pinoHttp({ logger }));
 
@@ -52,226 +44,143 @@ app.post('/auth/token', upload.none(), (req, res) => {
     return res.status(401).json({ detail: "Incorrect username or password" });
 });
 
-// ── Step 4: Player Engine Endpoints (Refactored) ──
-app.get('/screens/player', playerController.getPlaylist);
-app.post('/screens/heartbeat', playerController.heartbeat);
+// ── Step 4: Simple Storage API ──
 
-// ── Step 5: Screen Management API ──
-app.get(['/screens', '/screens/'], async (req, res) => {
-    try {
-        const screens = await prisma.screen.findMany({ include: { group: true } });
-        const mapped = await Promise.all(screens.map(async s => {
-            const active = await getActivePlaylist(s);
-            return {
-                id: s.id,
-                name: s.name,
-                status: s.status,
-                lastPing: s.lastSeen,
-                playlistId: s.currentPlaylistId,
-                device_id: s.deviceId,
-                groupId: s.groupId,
-                group_name: s.group ? s.group.name : "Unassigned",
-                active_playlist_name: active ? active.name : "None",
-            };
-        }));
-        res.json(mapped);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+// Generic Helper
+const getSection = (name) => readDB()[name] || [];
+const saveSection = (name, data) => {
+    const db = readDB();
+    db[name] = data;
+    writeDB(db);
+};
+
+// SCREENS
+app.get('/screens', (req, res) => res.json(getSection('screens')));
+app.post('/screens', (req, res) => {
+    const db = readDB();
+    const screen = { id: Date.now().toString(), ...req.body, status: 'online', lastPing: new Date().toISOString() };
+    db.screens.push(screen);
+    writeDB(db);
+    res.json(screen);
+});
+app.put('/screens/:id', (req, res) => {
+    const db = readDB();
+    const idx = db.screens.findIndex(s => s.id === req.params.id);
+    if (idx > -1) {
+        db.screens[idx] = { ...db.screens[idx], ...req.body };
+        writeDB(db);
+        io.emit('playlist-updated');
+        return res.json(db.screens[idx]);
     }
+    res.status(404).json({ error: "Not found" });
 });
-
-app.post('/screens/register', async (req, res) => {
-    const { name, deviceId, playlist_id } = req.body;
-    const s = await prisma.screen.upsert({
-        where: { deviceId: deviceId || `dev_${Date.now()}` },
-        update: { name, currentPlaylistId: playlist_id },
-        create: { 
-            name: name || "New Screen", 
-            deviceId: deviceId || `dev_${Date.now()}`,
-            currentPlaylistId: playlist_id
-        }
-    });
-    res.json(s);
-});
-
-app.put('/screens/:id', async (req, res) => {
-    const { name, playlist_id, status, groupId } = req.body;
-    const s = await prisma.screen.update({
-        where: { id: req.params.id },
-        data: { 
-            name, 
-            currentPlaylistId: playlist_id,
-            status: status || undefined,
-            groupId: groupId === "null" ? null : (groupId || undefined)
-        }
-    });
-    io.emit('playlist-updated');
-    res.json(s);
-});
-
-app.delete('/screens/:id', async (req, res) => {
-    await prisma.screen.delete({ where: { id: req.params.id } });
+app.delete('/screens/:id', (req, res) => {
+    const db = readDB();
+    db.screens = db.screens.filter(s => s.id !== req.params.id);
+    writeDB(db);
     res.status(204).send();
 });
 
-app.put('/screens/bulk', async (req, res) => {
-    try {
-        const { screen_ids, playlist_id } = req.body;
-        const count = await prisma.screen.updateMany({
-            where: { id: { in: screen_ids } },
-            data: { currentPlaylistId: playlist_id }
-        });
-        io.emit('playlist-updated');
-        res.json({ updated: count.count, playlist_id });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+// MEDIA
+app.get('/media', (req, res) => res.json(getSection('media')));
+app.post('/media/upload', upload.single('file'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file" });
+    const fileName = `${Date.now()}-${req.file.originalname}`;
+    fs.writeFileSync(path.join(uploadsDir, fileName), req.file.buffer);
+    
+    const db = readDB();
+    const host = req.get('host');
+    const protocol = req.get('x-forwarded-proto') || req.protocol;
+    const media = {
+        id: Date.now().toString(),
+        name: req.body.name || req.file.originalname,
+        type: req.file.mimetype.startsWith('video') ? 'video' : 'image',
+        url: `${protocol}://${host}/uploads/${fileName}`
+    };
+    db.media.push(media);
+    writeDB(db);
+    io.emit('media-updated');
+    res.json(media);
 });
-
-// ── Step 6: Groups API ──
-app.get('/groups', async (req, res) => {
-    const groups = await prisma.group.findMany({
-        include: { _count: { select: { screens: true } } }
-    });
-    res.json(groups.map(g => ({ ...g, screen_count: g._count.screens })));
+app.post('/media/youtube', (req, res) => {
+    const db = readDB();
+    const media = { id: Date.now().toString(), name: req.body.name || "YouTube", type: 'youtube', url: req.body.url };
+    db.media.push(media);
+    writeDB(db);
+    res.json(media);
 });
-
-app.post('/groups', async (req, res) => {
-    const { name } = req.body;
-    try {
-        const group = await prisma.group.create({ data: { name } });
-        res.json(group);
-    } catch (e) {
-        res.status(400).json({ error: "Group already exists" });
-    }
-});
-
-app.delete('/groups/:id', async (req, res) => {
-    await prisma.group.delete({ where: { id: req.params.id } });
+app.delete('/media/:id', (req, res) => {
+    const db = readDB();
+    db.media = db.media.filter(m => m.id !== req.params.id);
+    writeDB(db);
     res.status(204).send();
 });
 
-// ── Step 7: Media & Playlists ──
-app.get('/media', async (req, res) => {
-    const media = await prisma.media.findMany({ orderBy: { createdAt: 'desc' } });
-    res.json(media.map(m => enrichMedia(m)));
+// PLAYLISTS
+app.get('/playlists', (req, res) => res.json(getSection('playlists')));
+app.post('/playlists', (req, res) => {
+    const db = readDB();
+    const playlist = { id: Date.now().toString(), ...req.body, items: req.body.items || [] };
+    db.playlists.push(playlist);
+    writeDB(db);
+    res.json(playlist);
+});
+app.delete('/playlists/:id', (req, res) => {
+    const db = readDB();
+    db.playlists = db.playlists.filter(p => p.id !== req.params.id);
+    writeDB(db);
+    res.status(204).send();
 });
 
-app.post('/media/upload', upload.single('file'), async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-        const fileName = `${Date.now()}-${req.file.originalname}`;
-        const filePath = path.join(uploadsDir, fileName);
-        fs.writeFileSync(filePath, req.file.buffer);
-
-        const host = req.get('host');
-        const protocol = req.get('x-forwarded-proto') || req.protocol;
-        const url = `${protocol}://${host}/uploads/${fileName}`;
-        
-        const media = await prisma.media.create({
-            data: {
-                name: req.body.name || req.file.originalname,
-                type: req.file.mimetype.startsWith('video') ? 'video' : 'image',
-                url: url,
-            }
-        });
-        io.emit('playlist-updated');
-        res.json(enrichMedia(media));
-    } catch (e) {
-        res.status(500).json({ error: "Failed to upload file" });
-    }
-});
-
-app.post('/media/youtube', async (req, res) => {
-    try {
-        const { url, name } = req.body;
-        const media = await prisma.media.create({
-            data: {
-                name: name || "YouTube Video",
-                type: 'youtube',
-                url: url,
-            }
-        });
-        io.emit('playlist-updated');
-        res.json(enrichMedia(media));
-    } catch (e) {
-        res.status(500).json({ error: "Failed to add YouTube video" });
-    }
-});
-
-app.patch('/media/:id/rename', async (req, res) => {
-    try {
-        const { name } = req.body;
-        const media = await prisma.media.update({
-            where: { id: req.params.id },
-            data: { name }
-        });
-        res.json(enrichMedia(media));
-    } catch (e) {
-        res.status(500).json({ error: "Failed to rename media" });
-    }
-});
-
-app.delete('/media/:id', async (req, res) => {
-    try {
-        await prisma.media.delete({ where: { id: req.params.id } });
-        io.emit('playlist-updated');
-        res.status(204).send();
-    } catch (e) {
-        res.status(500).json({ error: "Failed to delete media" });
-    }
-});
-
-app.get('/playlists', async (req, res) => {
-    const pl = await prisma.playlist.findMany({ include: { items: true } });
-    for (const p of pl) { await enrichPlaylistData(p); }
-    res.json(pl);
-});
-
-app.post('/playlists', async (req, res) => {
-    const { name, items } = req.body;
-    const newPl = await prisma.playlist.create({ data: { name: name || "New Playlist" } });
-    if (items?.length > 0) {
-        await prisma.playlistItem.createMany({
-            data: items.map((it, i) => ({
-                playlistId: newPl.id,
-                mediaId: it.mediaId || it.media_id,
-                order: i,
-                duration: it.duration || 10
-            }))
-        });
-    }
-    res.json(newPl);
-});
-
-// ── Step 8: Schedules ──
-app.get('/schedules', async (req, res) => {
-    const schedules = await prisma.schedule.findMany();
-    res.json(schedules.map(s => ({
-        ...s,
-        days_of_week: JSON.parse(s.daysOfWeek),
-    })));
-});
-
-app.post('/schedules', async (req, res) => {
-    const { screen_id, playlist_id, days_of_week, start_time, end_time } = req.body;
-    const sch = await prisma.schedule.create({
-        data: {
-            screenId: screen_id,
-            playlistId: playlist_id,
-            daysOfWeek: JSON.stringify(days_of_week || []),
-            startTime: start_time,
-            endTime: end_time
-        }
-    });
+// SCHEDULES
+app.get('/schedules', (req, res) => res.json(getSection('schedules')));
+app.post('/schedules', (req, res) => {
+    const db = readDB();
+    const sch = { id: Date.now().toString(), ...req.body };
+    db.schedules.push(sch);
+    writeDB(db);
     io.emit('playlist-updated');
     res.json(sch);
 });
 
-// ── Step 9: Launch ──
-app.get('/health', (req, res) => res.json({ status: "ok", service: "backend" }));
+// PLAYER Heartbeat & Playlist Discovery
+app.get('/screens/player', (req, res) => {
+    const { device_id } = req.query;
+    const db = readDB();
+    const screen = db.screens.find(s => s.device_id === device_id || s.id === device_id);
+    
+    if (!screen) {
+        return res.json({ name: "Fallback", items: [] });
+    }
+
+    const playlist = db.playlists.find(p => p.id === screen.playlistId);
+    if (!playlist) return res.json({ name: "No Content", items: [] });
+
+    // Enrich items with media objects
+    const enrichedItems = (playlist.items || []).map(item => {
+        const media = db.media.find(m => m.id === item.mediaId);
+        return { ...item, media };
+    }).filter(it => it.media);
+
+    res.json({ ...playlist, items: enrichedItems });
+});
+
+app.post('/screens/heartbeat', (req, res) => {
+    const { device_id } = req.body;
+    const db = readDB();
+    const idx = db.screens.findIndex(s => s.device_id === device_id || s.id === device_id);
+    if (idx > -1) {
+        db.screens[idx].status = 'online';
+        db.screens[idx].lastPing = new Date().toISOString();
+        writeDB(db);
+    }
+    res.status(204).send();
+});
+
+// ── Step 5: Launch ──
+app.get('/health', (req, res) => res.json({ status: "ok", storage: "json" }));
 
 const PORT = process.env.PORT || 8000;
 httpServer.listen(PORT, '0.0.0.0', () => {
-    logger.info(`Backend Server running on port ${PORT}`);
+    logger.info(`Lightweight Backend running on port ${PORT}`);
 });
