@@ -172,7 +172,20 @@ app.delete('/media/:id', (req, res) => {
 });
 
 // PLAYLISTS
-app.get('/playlists', (req, res) => res.json(getSection('playlists')));
+app.get('/playlists', (req, res) => {
+    const db = readDB();
+    const playlists = db.playlists || [];
+    
+    const enriched = playlists.map(pl => ({
+        ...pl,
+        items: (pl.items || []).map(item => ({
+            ...item,
+            media: db.media.find(m => m.id === item.mediaId)
+        }))
+    }));
+    
+    res.json(enriched);
+});
 app.post('/playlists', (req, res) => {
     const db = readDB();
     const playlist = { id: Date.now().toString(), ...req.body, items: req.body.items || [] };
