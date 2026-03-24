@@ -224,18 +224,21 @@ app.delete('/media/:id', (req, res) => {
 
 // PLAYLISTS
 app.get('/playlists', async (req, res) => {
-    const db = readDB();
-    const playlists = db.playlists || [];
+    const { data: playlists, error: plError } = await supabase
+        .from('playlists')
+        .select('*')
+        .eq('client_id', CLIENT_ID);
+
+    if (plError) return res.status(500).json({ error: plError });
     
-    // Get all unique media IDs from all playlists
-    const allMediaIds = [...new Set(playlists.flatMap(pl => (pl.items || []).map(i => i.mediaId)))];
-    
-    const { data: mediaList, error } = await supabase
+    // Enrichment
+    const allMediaIds = [...new Set((playlists || []).flatMap(pl => (pl.items || []).map(i => i.mediaId)))];
+    const { data: mediaList, error: mError } = await supabase
         .from('media')
         .select('*')
         .in('id', allMediaIds);
 
-    if (error) return res.status(500).json({ error });
+    if (mError) return res.status(500).json({ error: mError });
 
     const mediaMap = {};
     mediaList.forEach(m => { mediaMap[m.id] = m; });
@@ -250,37 +253,45 @@ app.get('/playlists', async (req, res) => {
     
     res.json(enriched);
 });
-app.post('/playlists', (req, res) => {
-    const db = readDB();
-    const playlist = { id: Date.now().toString(), ...req.body, items: req.body.items || [] };
-    db.playlists.push(playlist);
-    writeDB(db);
+
+app.post('/playlists', async (req, res) => {
+    const playlist = {
+        id: Date.now().toString(),
+        client_id: CLIENT_ID,
+        name: req.body.name,
+        items: req.body.items || []
+    };
+
+    const { error } = await supabase.from('playlists').insert(playlist);
+    if (error) return res.status(500).json({ error });
+
     res.json(playlist);
 });
 
-app.put('/playlists/:id', (req, res) => {
-    const db = readDB();
-    const idx = db.playlists.findIndex(p => p.id === req.params.id);
+app.put('/playlists/:id', async (req, res) => {
+    const { name, items } = req.body;
+    const { data, error } = await supabase
+        .from('playlists')
+        .update({ name, items: items || [] })
+        .eq('id', req.params.id)
+        .eq('client_id', CLIENT_ID)
+        .select();
 
-    if (idx > -1) {
-        db.playlists[idx] = {
-            ...db.playlists[idx],
-            ...req.body
-        };
+    if (error) return res.status(500).json({ error });
+    if (!data || data.length === 0) return res.status(404).json({ error: "Playlist not found" });
 
-        writeDB(db);
-        io.emit('playlist-updated');
-
-        return res.json(db.playlists[idx]);
-    }
-
-    res.status(404).json({ error: "Playlist not found" });
+    io.emit('playlist-updated');
+    res.json(data[0]);
 });
 
-app.delete('/playlists/:id', (req, res) => {
-    const db = readDB();
-    db.playlists = db.playlists.filter(p => p.id !== req.params.id);
-    writeDB(db);
+app.delete('/playlists/:id', async (req, res) => {
+    const { error } = await supabase
+        .from('playlists')
+        .delete()
+        .eq('id', req.params.id)
+        .eq('client_id', CLIENT_ID);
+
+    if (error) return res.status(500).json({ error });
     res.status(204).send();
 });
 
@@ -305,8 +316,14 @@ app.get('/screens/player', async (req, res) => {
         return res.json({ name: "Fallback", items: [] });
     }
 
-    const playlist = db.playlists.find(p => p.id === screen.playlistId);
-    if (!playlist) return res.json({ name: "No Content", items: [] });
+    const { data: playlists, error: plError } = await supabase
+        .from('playlists')
+        .select('*')
+        .eq('id', screen.playlistId)
+        .eq('client_id', CLIENT_ID);
+
+    if (plError || !playlists || playlists.length === 0) return res.json({ name: "No Content", items: [] });
+    const playlist = playlists[0];
 
     // Enrich items with Supabase media objects
     const mediaIds = (playlist.items || []).map(i => i.mediaId);
