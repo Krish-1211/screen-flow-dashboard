@@ -340,14 +340,43 @@ app.delete('/playlists/:id', async (req, res) => {
 });
 
 // SCHEDULES
-app.get('/schedules', (req, res) => res.json(getSection('schedules')));
-app.post('/schedules', (req, res) => {
-    const db = readDB();
-    const sch = { id: Date.now().toString(), ...req.body };
-    db.schedules.push(sch);
-    writeDB(db);
+app.get('/schedules', async (req, res) => {
+    const { data, error } = await supabase
+        .from('schedules')
+        .select('*')
+        .eq('client_id', CLIENT_ID);
+
+    if (error) return res.status(500).json({ error });
+    res.json(data.map(s => s.data));
+});
+
+app.post('/schedules', async (req, res) => {
+    const scheduleId = Date.now().toString();
+    const schedule = {
+        id: scheduleId,
+        client_id: CLIENT_ID,
+        data: {
+            id: scheduleId,
+            ...req.body
+        }
+    };
+
+    const { error } = await supabase.from('schedules').insert(schedule);
+    if (error) return res.status(500).json({ error });
+
     io.emit('playlist-updated');
-    res.json(sch);
+    res.json(schedule.data);
+});
+
+app.delete('/schedules/:id', async (req, res) => {
+    const { error } = await supabase
+        .from('schedules')
+        .delete()
+        .eq('client_id', CLIENT_ID)
+        .eq('data->>id', req.params.id);
+
+    if (error) return res.status(500).json({ error });
+    res.status(204).send();
 });
 
 // PLAYER Heartbeat & Playlist Discovery
