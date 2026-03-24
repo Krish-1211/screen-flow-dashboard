@@ -180,6 +180,26 @@ app.post('/playlists', (req, res) => {
     writeDB(db);
     res.json(playlist);
 });
+
+app.put('/playlists/:id', (req, res) => {
+    const db = readDB();
+    const idx = db.playlists.findIndex(p => p.id === req.params.id);
+
+    if (idx > -1) {
+        db.playlists[idx] = {
+            ...db.playlists[idx],
+            ...req.body
+        };
+
+        writeDB(db);
+        io.emit('playlist-updated');
+
+        return res.json(db.playlists[idx]);
+    }
+
+    res.status(404).json({ error: "Playlist not found" });
+});
+
 app.delete('/playlists/:id', (req, res) => {
     const db = readDB();
     db.playlists = db.playlists.filter(p => p.id !== req.params.id);
