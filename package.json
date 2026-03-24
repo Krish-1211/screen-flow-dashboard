@@ -13,7 +13,7 @@
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:player\"",
     "build": "npm run build --workspaces",
     "build:all": "npm run build --workspaces",
-    "start": "node backend/server.js",
+    "start": "npm start --workspace=backend",
     "db:push": "npm run db:push --workspace=backend",
     "db:generate": "npm run db:generate --workspace=backend",
     "postinstall": "npm run db:generate --workspace=backend"
