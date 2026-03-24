@@ -19,6 +19,7 @@ export default function DisplayPlayerPage() {
     const getOrCreateDeviceId = () => {
       const params = new URLSearchParams(window.location.search);
       const urlId = params.get("device_id");
+      const urlName = params.get("name");
 
       if (isValidDeviceId(urlId)) {
         localStorage.setItem("sf_device_id", urlId!);
@@ -31,8 +32,11 @@ export default function DisplayPlayerPage() {
       const newId = crypto.randomUUID();
       localStorage.setItem("sf_device_id", newId);
       
-      // Force URL update
-      window.history.replaceState({}, "", `/display?device_id=${newId}`);
+      // Force URL update (keep name if provided)
+      const targetUrl = urlName 
+        ? `/display?device_id=${newId}&name=${urlName}` 
+        : `/display?device_id=${newId}`;
+      window.history.replaceState({}, "", targetUrl);
       return newId;
     };
 
@@ -44,13 +48,16 @@ export default function DisplayPlayerPage() {
     const register = async () => {
       if (localStorage.getItem("sf_registered") === "true") return;
 
+      const params = new URLSearchParams(window.location.search);
+      const urlName = params.get("name");
+
       try {
         await screensApi.register({
           deviceId: finalId,
-          name: `Screen-${finalId.slice(0, 6)}`
+          name: urlName || `Screen-${finalId.slice(0, 6)}`
         });
         localStorage.setItem("sf_registered", "true");
-        console.log("Screen auto-registered:", finalId);
+        console.log("Screen auto-registered:", finalId, "as:", urlName || "Auto");
       } catch (err) {
         // If it fails with 409 or similar, it might already exist
         console.warn("Auto-registration check:", err);
