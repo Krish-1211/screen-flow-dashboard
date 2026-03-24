@@ -16,25 +16,8 @@ export class PlayerEngine {
   }
 
   public replacePlaylist(pl: Playlist) {
-    let newItems = [...(pl.items || [])];
+    const newItems = [...(pl.items || [])];
     
-    // Step 1: Inject gap item at runtime for single-item playlists
-    if (newItems.length === 1) {
-      console.info('[player] Single-item playlist detected, injecting system gap');
-      newItems.push({
-        id: 'system-gap',
-        mediaId: 'system-gap',
-        order: 999,
-        duration: 0.3, // 0.3 seconds = 300ms
-        media: {
-          id: 'system-gap',
-          name: 'System Gap',
-          type: 'system_gap',
-          url: '/black-screen.svg'
-        }
-      });
-    }
-
     if (JSON.stringify(newItems) === JSON.stringify(this.playlist)) {
       return;
     }

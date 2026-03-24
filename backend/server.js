@@ -564,6 +564,23 @@ app.get('/screens/player', async (req, res) => {
         };
     });
 
+    // Step 2 & 3: Inject gap item ONLY for the player if it's a solo video
+    // 1 second duration, invisible to user's dashboard (which uses different routes)
+    if (enrichedItems.length === 1 && enrichedItems[0].media?.type === 'video') {
+        enrichedItems.push({
+            id: 'system-gap',
+            mediaId: 'system-gap',
+            order: 999,
+            duration: 1, // 1 second
+            media: {
+                id: 'system-gap',
+                name: 'System Gap',
+                type: 'system_gap',
+                url: '/black-screen.svg'
+            }
+        });
+    }
+
     res.json({ ...playlist, items: enrichedItems });
 });
 
