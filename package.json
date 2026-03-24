@@ -27,5 +27,8 @@
   },
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "*"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.5.0"
   }
 }
