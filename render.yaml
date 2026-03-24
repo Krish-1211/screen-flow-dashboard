@@ -2,8 +2,8 @@ services:
   - type: web
     name: screenflow-api
     runtime: node
-    buildCommand: npm install && npx prisma generate
-    startCommand: node server.js
+    buildCommand: npm install
+    startCommand: npm start
     envVars:
       - key: DATABASE_URL
         sync: false
@@ -33,8 +33,8 @@ services:
   - type: web
     name: screenflow-dashboard
     runtime: static
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    buildCommand: npm install && npm run build --workspace=frontend
+    staticPublishPath: ./frontend/dist
     envVars:
       - key: VITE_API_URL
         sync: false
