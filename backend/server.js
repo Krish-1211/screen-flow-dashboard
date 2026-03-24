@@ -179,22 +179,13 @@ app.post('/screens/register', async (req, res) => {
         if (error) return res.status(500).json({ error });
         return res.json(updated);
     } else {
-        const newScreen = {
-            id: Date.now().toString(),
-            client_id: CLIENT_ID,
-            device_id: deviceId,
-            name: name || "New Screen",
-            playlist_id: playlist_id,
-            status: 'online',
-            last_ping: new Date().toISOString()
-        };
-        const { error } = await supabase.from('screens').insert(newScreen);
-        if (error) {
-            logger.error({ error, newScreen }, 'Failed to register brand new screen in Supabase');
-            return res.status(500).json({ error });
-        }
-        logger.info({ screenId: newScreen.id }, 'New screen registered successfully');
-        res.json(newScreen);
+        // PERMANENT FIX: Disable automatic creation of screen records to prevent 'Ghost Screens'.
+        // To register a screen, it MUST be pre-created in the dashboard by Name.
+        logger.warn({ deviceId, name }, 'Registration rejected: No matching screen record found in dashboard.');
+        return res.status(404).json({ 
+            error: 'Screen not found', 
+            message: 'You must first create this screen in the dashboard before the player can connect.' 
+        });
     }
 });
 
