@@ -19,6 +19,7 @@
     "postinstall": "npm run db:generate --workspace=backend"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
     "concurrently": "^9.2.1",
     "prisma": "^7.5.0"
   },
@@ -29,7 +30,12 @@
     "@esbuild/linux-arm64": "*",
     "@esbuild/linux-x64": "*",
     "@rollup/rollup-linux-arm64-gnu": "*",
-    "@rollup/rollup-linux-x64-gnu": "*"
+    "@rollup/rollup-linux-x64-gnu": "*",
+    "@rollup/rollup-linux-x64-musl": "*",
+    "@swc/core-linux-arm64-gnu": "*",
+    "@swc/core-linux-arm64-musl": "*",
+    "@swc/core-linux-x64-gnu": "*",
+    "@swc/core-linux-x64-musl": "*"
   },
   "dependencies": {
     "@prisma/client": "^7.5.0"
