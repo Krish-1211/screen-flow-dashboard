@@ -3,10 +3,8 @@ services:
     name: screenflow-api
     runtime: node
     buildCommand: npm install
-    startCommand: npm start
+    startCommand: npm start --workspace=backend
     envVars:
-      - key: DATABASE_URL
-        sync: false
       - key: JWT_SECRET_KEY
         sync: false
       - key: ADMIN_USERNAME
@@ -17,14 +15,6 @@ services:
         value: "https://screenflow-dashboard.onrender.com,http://localhost:5173"
       - key: HEARTBEAT_TIMEOUT_SECONDS
         value: "90"
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: SUPABASE_BUCKET_NAME
-        value: "media"
-      - key: PYTHON_VERSION
-        value: "3.12.0"
       - key: RENDER
         value: "true"
       - key: API_BASE_URL

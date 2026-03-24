@@ -126,9 +126,19 @@ app.post('/screens/register', (req, res) => {
 app.get('/groups', (req, res) => {
     const db = readDB();
     const groups = db.groups || [];
+    
+    // Always provide at least one default group if none are configured
+    if (groups.length === 0) {
+        return res.json([{
+            id: "default",
+            name: "Default Group",
+            screen_count: (db.screens || []).filter(s => !s.groupId || s.groupId === "default").length
+        }]);
+    }
+
     res.json(groups.map(g => ({
         ...g,
-        screen_count: db.screens.filter(s => s.groupId === g.id).length
+        screen_count: (db.screens || []).filter(s => s.groupId === g.id).length
     })));
 });
 
