@@ -105,6 +105,7 @@ app.post('/screens', async (req, res) => {
 app.put('/screens/:id', async (req, res) => {
     const updates = {
         name: req.body.name,
+        device_id: req.body.device_id || req.body.deviceId,
         playlist_id: req.body.playlistId || req.body.playlist_id,
         status: req.body.status,
         last_ping: new Date().toISOString()
