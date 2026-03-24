@@ -9,6 +9,9 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { readDB, writeDB } from './src/lib/storage.js';
+import supabase from './src/lib/supabase.js';
+
+const CLIENT_ID = "client_1";
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const app = express();
@@ -161,23 +164,47 @@ app.delete('/groups/:id', (req, res) => {
 });
 
 // MEDIA
-app.get('/media', (req, res) => res.json(getSection('media')));
-app.post('/media/upload', upload.single('file'), (req, res) => {
+app.get('/media', async (req, res) => {
+    const { data, error } = await supabase
+        .from('media')
+        .select('*')
+        .eq('client_id', CLIENT_ID);
+
+    if (error) return res.status(500).json({ error });
+    res.json(data);
+});
+
+app.post('/media/upload', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "No file" });
+
     const fileName = `${Date.now()}-${req.file.originalname}`;
-    fs.writeFileSync(path.join(uploadsDir, fileName), req.file.buffer);
-    
-    const db = readDB();
-    const host = req.get('host');
-    const protocol = req.get('x-forwarded-proto') || req.protocol;
+
+    const { error: uploadError } = await supabase.storage
+        .from('media')
+        .upload(fileName, req.file.buffer, {
+            contentType: req.file.mimetype,
+            upsert: false
+        });
+
+    if (uploadError) return res.status(500).json({ error: uploadError });
+
+    const { data: urlData } = supabase.storage
+        .from('media')
+        .getPublicUrl(fileName);
+
     const media = {
         id: Date.now().toString(),
-        name: req.body.name || req.file.originalname,
+        client_id: CLIENT_ID,
+        name: req.file.originalname,
         type: req.file.mimetype.startsWith('video') ? 'video' : 'image',
-        url: `${protocol}://${host}/uploads/${fileName}`
+        url: urlData.publicUrl,
+        size: req.file.size
     };
-    db.media.push(media);
-    writeDB(db);
+
+    const { error: dbError } = await supabase.from('media').insert(media);
+
+    if (dbError) return res.status(500).json({ error: dbError });
+
     io.emit('media-updated');
     res.json(media);
 });
