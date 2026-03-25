@@ -4,10 +4,12 @@ export interface User {
     email: string;
 }
 
-export interface Group {
+export interface Space {
     id: string;
     name: string;
-    screen_count: number;
+    parent_id?: string;
+    screenCount?: number;
+    subspaceCount?: number;
 }
 
 export interface Screen {
@@ -17,7 +19,7 @@ export interface Screen {
     playlistId?: number;
     lastPing?: string;
     device_id?: string;
-    nodeId?: string;
+    spaceId?: string;
 }
 
 export interface Media {

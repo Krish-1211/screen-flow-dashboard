@@ -230,10 +230,25 @@ app.get('/nodes', async (req, res) => {
         query = query.eq('parent_id', parent_id);
     }
 
-    const { data, error } = await query.order('name');
+    const { data: nodes, error } = await query.order('name');
     if (error) return res.status(500).json({ error });
-    res.json(data);
+
+    const enrichedNodes = await Promise.all((nodes || []).map(async node => {
+        const [{ count: screenCount }, { count: subspaceCount }] = await Promise.all([
+          supabase.from('screens').select('*', { count: 'exact', head: true }).eq('node_id', node.id),
+          supabase.from('nodes').select('*', { count: 'exact', head: true }).eq('parent_id', node.id)
+        ]);
+
+        return {
+            ...node,
+            screenCount: screenCount || 0,
+            subspaceCount: subspaceCount || 0
+        };
+    }));
+
+    res.json(enrichedNodes);
 });
+
 
 app.get('/nodes/path/:id', async (req, res) => {
     // Helper to get breadcrumb path

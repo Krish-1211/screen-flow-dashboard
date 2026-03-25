@@ -1,10 +1,10 @@
-import type { Screen } from '@/types';
+import type { Screen, Space } from '@/types';
 import api from '@/lib/axios';
 
 export const screensApi = {
-    getAll: async (node_id?: string): Promise<Screen[]> => {
+    getAll: async (spaceId?: string): Promise<Screen[]> => {
         let url = '/screens/';
-        if (node_id) url += `?node_id=${node_id === 'root' ? 'root' : node_id}`;
+        if (spaceId) url += `?node_id=${spaceId === 'root' ? 'root' : spaceId}`;
         
         const response = await api.get(url);
         return response.data.map((s: any) => ({
@@ -14,7 +14,7 @@ export const screensApi = {
             playlistId: s.playlistId,
             lastPing: s.lastPing,
             device_id: s.device_id,
-            nodeId: s.nodeId
+            spaceId: s.nodeId
         })) as Screen[];
     },
     getById: async (id: string | number): Promise<Screen> => {
@@ -27,12 +27,14 @@ export const screensApi = {
             playlistId: s.playlistId,
             lastPing: s.lastPing,
             device_id: s.device_id,
-            nodeId: s.nodeId
+            spaceId: s.nodeId
         } as Screen;
     },
-    create: async (payload: { name: string, playlist_id?: string | number, nodeId?: string }): Promise<Screen> => {
+    create: async (payload: { name: string, playlist_id?: string | number, spaceId?: string }): Promise<Screen> => {
         const fullPayload = {
-            ...payload,
+            name: payload.name,
+            playlist_id: payload.playlist_id,
+            node_id: payload.spaceId,
             device_id: crypto.randomUUID()
         };
         const response = await api.post('/screens', fullPayload);
@@ -44,7 +46,7 @@ export const screensApi = {
             playlistId: s.playlistId,
             lastPing: s.lastPing,
             device_id: s.device_id,
-            nodeId: s.nodeId
+            spaceId: s.nodeId
         } as Screen;
     },
     register: async (payload: { deviceId: string, name: string, playlist_id?: string | number }): Promise<Screen> => {
@@ -63,7 +65,7 @@ export const screensApi = {
         const updatePayload: any = {};
         if (payload.name !== undefined) updatePayload.name = payload.name;
         if (payload.playlistId !== undefined) updatePayload.playlist_id = payload.playlistId;
-        if (payload.nodeId !== undefined) updatePayload.node_id = payload.nodeId;
+        if (payload.spaceId !== undefined) updatePayload.node_id = payload.spaceId;
 
         const response = await api.put(`/screens/${id}`, updatePayload);
         const s = response.data;
@@ -74,7 +76,7 @@ export const screensApi = {
             playlistId: s.playlistId,
             lastPing: s.lastPing,
             device_id: s.device_id,
-            nodeId: s.nodeId
+            spaceId: s.nodeId
         } as Screen;
     },
     delete: async (id: string | number): Promise<void> => {
@@ -95,23 +97,23 @@ export const screensApi = {
         return response.data;
     },
 
-    // ── Hierarchical Nodes API ──
-    getNodes: async (parent_id?: string): Promise<any[]> => {
+    // ── Hierarchical Spaces API ──
+    getSpaces: async (parent_id?: string): Promise<Space[]> => {
         const response = await api.get(`/nodes?parent_id=${parent_id || 'root'}`);
         return response.data;
     },
-    createNode: async (name: string, parent_id?: string): Promise<any> => {
+    createSpace: async (name: string, parent_id?: string): Promise<Space> => {
         const response = await api.post('/nodes', { name, parent_id });
         return response.data;
     },
-    updateNode: async (id: string, updates: { name?: string, parent_id?: string }): Promise<any> => {
+    updateSpace: async (id: string, updates: { name?: string, parent_id?: string }): Promise<Space> => {
         const response = await api.put(`/nodes/${id}`, updates);
         return response.data;
     },
-    deleteNode: async (id: string): Promise<void> => {
+    deleteSpace: async (id: string): Promise<void> => {
         await api.delete(`/nodes/${id}`);
     },
-    getNodePath: async (id: string): Promise<any[]> => {
+    getSpacePath: async (id: string): Promise<Space[]> => {
         const response = await api.get(`/nodes/path/${id}`);
         return response.data;
     }

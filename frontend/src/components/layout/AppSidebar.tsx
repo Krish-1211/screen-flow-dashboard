@@ -1,6 +1,6 @@
 import {
   LayoutDashboard,
-  Monitor,
+  Layout,
   Image,
   ListMusic,
   Calendar,
@@ -29,7 +29,8 @@ import { Button } from "@/components/ui/button";
 
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Screens", url: "/screens", icon: Monitor },
+  { title: "Spaces", url: "/screens", icon: Layout },
+
   { title: "Media Library", url: "/media", icon: Image },
   { title: "Playlists", url: "/playlists", icon: ListMusic },
   { title: "Schedules", url: "/schedules", icon: Calendar },
