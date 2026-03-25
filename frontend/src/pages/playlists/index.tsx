@@ -12,7 +12,7 @@ import { ListMusic } from "lucide-react";
 import type { Media } from "@/types";
 
 /**
- * A debounced/buffered duration input to keep the UI snappy
+ * Snappy buffered duration input
  */
 function PlaylistDurationInput({ 
   initialValue, 
@@ -25,7 +25,6 @@ function PlaylistDurationInput({
 }) {
   const [localValue, setLocalValue] = useState(initialValue.toString());
 
-  // Sync with prop if it changes externally
   useEffect(() => {
     setLocalValue(initialValue.toString());
   }, [initialValue]);
@@ -40,9 +39,8 @@ function PlaylistDurationInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      (e.target as HTMLInputElement).blur();
-    } else if (e.key === 'Escape') {
+    if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+    else if (e.key === 'Escape') {
       setLocalValue(initialValue.toString());
       (e.target as HTMLInputElement).blur();
     }
@@ -50,25 +48,24 @@ function PlaylistDurationInput({
 
   if (disabled) {
     return (
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/20 text-primary transition-all">
-        <Film className="h-3 w-3" />
-        <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Auto Length</span>
+      <div className="flex items-center gap-1 bg-primary/10 px-2 py-1 rounded border border-primary/20">
+        <span className="text-[10px] font-bold text-primary uppercase whitespace-nowrap">Auto Length</span>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1.5 bg-secondary/30 px-3 py-1.5 rounded-xl border border-border group-shadow-sm focus-within:border-primary/50 focus-within:bg-secondary/50 transition-all">
-      <Clock className="h-3 w-3 text-muted-foreground group-focus-within:text-primary transition-colors" />
+    <div className="flex items-center gap-1 bg-secondary/50 px-2 py-1 rounded border border-border">
+      <Clock className="h-3 w-3 text-muted-foreground" />
       <input
         type="number"
         value={localValue}
         onChange={(e) => setLocalValue(e.target.value)}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
-        className="w-8 h-5 text-xs bg-transparent border-none text-center p-0 font-bold focus:ring-0 text-foreground"
+        className="w-8 h-5 text-xs bg-transparent border-none text-center p-0 font-medium focus:ring-0"
       />
-      <span className="text-[10px] text-muted-foreground font-bold">s</span>
+      <span className="text-[10px] text-muted-foreground font-medium">s</span>
     </div>
   );
 }
@@ -167,105 +164,66 @@ export default function PlaylistsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-8 max-w-[1400px] mx-auto">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-2">
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
           <div>
-            <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-[0.2em] mb-3">
-              <ListMusic className="h-4 w-4" />
-              <span>Curation Engine</span>
-            </div>
-            <h1 className="text-4xl font-black text-foreground tracking-tight">Playlists</h1>
-            <p className="text-muted-foreground mt-2 text-lg font-medium opacity-80">Design seamless content sequences for your digital spaces.</p>
+            <h1 className="text-2xl font-semibold text-foreground">Playlists</h1>
+            <p className="text-sm text-muted-foreground mt-1">Create and manage content playlists</p>
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => queryClient.invalidateQueries({ queryKey: ['playlists'] })} className="h-12 w-12 rounded-2xl bg-secondary/40 hover:bg-secondary/60">
-              <RefreshCw className={cn("h-5 w-5", isLoading && "animate-spin")} />
-            </Button>
-            <Button onClick={addPlaylist} disabled={createMutation.isPending} className="h-12 px-6 rounded-2xl shadow-xl shadow-primary/20 font-bold transition-all hover:scale-[1.02] active:scale-[0.98]">
-              <Plus className="h-5 w-5 mr-2" />New Playlist
-            </Button>
-          </div>
+          <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ['playlists'] })}>
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Library explorer */}
-          <div className="lg:col-span-3 space-y-6">
-             <div className="bg-card/50 border border-border/60 rounded-[2rem] overflow-hidden backdrop-blur-sm shadow-xl shadow-foreground/[0.02]">
-                <div className="p-6 border-b border-border/40 bg-card/60">
-                   <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground flex items-center gap-3">
-                     <ImageIcon className="h-4 w-4 text-primary" /> Media Assets
-                   </h2>
-                </div>
-                <div className="p-3 space-y-2 max-h-[640px] overflow-y-auto no-scrollbar">
-                  {media.length === 0 ? (
-                    <div className="py-12 text-center text-muted-foreground/60">
-                       <p className="text-xs font-bold uppercase tracking-widest">Library Empty</p>
-                    </div>
-                  ) : media.map((m: any) => (
-                    <div key={m.id} className="group relative bg-card/40 border border-border/40 rounded-2xl p-2.5 flex items-center gap-3 hover:border-primary/40 hover:bg-card transition-all cursor-default">
-                      <div className="h-12 w-12 rounded-xl bg-secondary flex items-center justify-center shrink-0 overflow-hidden relative shadow-sm">
-                        {m.thumbnail && <img src={m.thumbnail} className="absolute inset-0 w-full h-full object-cover opacity-80 group-hover:scale-110 transition-transform duration-500" />}
-                        {m.type === "image" ? <ImageIcon className="h-4 w-4 relative z-10" /> : <Film className="h-4 w-4 relative z-10" />}
-                      </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left: Playlists List */}
+          <div className="lg:col-span-3 space-y-4">
+            <div className="bg-card border border-border rounded-lg overflow-hidden">
+              <div className="p-4 border-b border-border flex items-center justify-between bg-card">
+                <h2 className="text-sm font-medium text-foreground uppercase tracking-wider">Playlists</h2>
+                <Button size="sm" variant="ghost" onClick={addPlaylist} disabled={createMutation.isPending}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {isLoading ? (
+                <div className="p-6 text-center text-muted-foreground text-sm">Loading...</div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {playlists.map((p: any) => (
+                    <div
+                      key={p.id}
+                      onClick={() => setSelectedId(p.id)}
+                      className={cn(
+                        "w-full text-left p-4 flex flex-row items-center justify-between hover:bg-accent/30 transition-colors cursor-pointer group",
+                        String(selectedId) === String(p.id) && "bg-accent/50 border-l-2 border-primary"
+                      )}
+                    >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-foreground truncate">{m.name}</p>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">{m.type}</p>
+                        <p className={cn("text-sm font-medium truncate", String(selectedId) === String(p.id) ? "text-primary" : "text-foreground")}>{p.name}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{p.items?.length || 0} items</p>
                       </div>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 rounded-lg opacity-0 group-hover:opacity-100 transition-all bg-primary/10 text-primary hover:bg-primary hover:text-white"
-                        disabled={!selected}
-                        onClick={() => addItem(m)}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(p.id); }}
+                        className="text-muted-foreground hover:text-destructive p-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                       >
-                        <Plus className="h-4 w-4" />
-                      </Button>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   ))}
                 </div>
-             </div>
-          </div>
-
-          {/* Catalog Selection */}
-          <div className="lg:col-span-3 space-y-6">
-            <div className="bg-card border border-border/40 rounded-[2rem] overflow-hidden shadow-xl shadow-foreground/[0.02]">
-              <div className="p-6 border-b border-border/40 bg-card/60">
-                <h2 className="text-sm font-black uppercase tracking-widest text-muted-foreground">Catalog</h2>
-              </div>
-              <div className="divide-y divide-border/40 overflow-y-auto max-h-[640px]">
-                {playlists.map((p: any) => (
-                  <div
-                    key={p.id}
-                    onClick={() => setSelectedId(p.id)}
-                    className={cn(
-                      "w-full text-left p-6 flex flex-row items-center justify-between hover:bg-secondary/40 transition-all cursor-pointer group border-l-4 border-transparent",
-                      String(selectedId) === String(p.id) && "bg-secondary border-primary"
-                    )}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className={cn("text-base font-bold truncate transition-colors", String(selectedId) === String(p.id) ? "text-primary" : "text-foreground group-hover:text-primary")}>{p.name}</p>
-                      <p className="text-xs text-muted-foreground font-medium mt-1 uppercase tracking-tighter opacity-60">{p.items?.length || 0} Assets assigned</p>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(p.id); }}
-                      className="text-muted-foreground hover:text-destructive p-2 shrink-0 opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
+              )}
             </div>
           </div>
 
-          {/* Sequence Editor */}
-          <div className="lg:col-span-6 bg-card border border-border/60 rounded-[2.5rem] shadow-2xl shadow-foreground/[0.03] overflow-hidden flex flex-col min-h-[500px]">
+          {/* Center: Editor */}
+          <div className="lg:col-span-6 bg-card border border-border rounded-lg">
             {selected ? (
               <>
-                <div className="p-8 border-b border-border/40 bg-card/80 backdrop-blur-md">
-                  <div className="flex items-center justify-between gap-4 group/header mb-6">
+                <div className="p-4 border-b border-border bg-card/50">
+                  <div className="flex items-center justify-between gap-2 group/header min-h-[40px]">
                     {isEditingName ? (
-                      <div className="flex items-center gap-2 flex-1 animate-in fade-in duration-300">
+                      <div className="flex items-center gap-2 flex-1">
                         <Input
                           value={tempName}
                           onChange={(e) => setTempName(e.target.value)}
@@ -273,117 +231,118 @@ export default function PlaylistsPage() {
                             if (e.key === 'Enter') {
                               if (tempName.trim() !== "" && tempName !== selected.name) {
                                 if (playlists.some(p => p.name.toLowerCase() === tempName.toLowerCase() && p.id !== selected.id)) {
-                                  toast.error(`A playlist named "${tempName}" already exists`);
+                                  toast.error(`Playlist "${tempName}" already exists`);
                                   return;
                                 }
                                 updatePlaylistName(tempName);
                                 setIsEditingName(false);
                               } else if (tempName.trim() === "") {
-                                toast.error("Playlist name cannot be empty");
+                                toast.error("Name cannot be empty");
                               } else {
                                 setIsEditingName(false);
                               }
                             } else if (e.key === 'Escape') {
-                              setTempName(selected.name);
                               setIsEditingName(false);
                             }
                           }}
                           autoFocus
-                          className="text-2xl font-black h-12 bg-secondary/50 border-primary/20 rounded-2xl focus-visible:ring-primary/20"
+                          className="text-lg font-bold h-9 bg-secondary/50"
                         />
-                        <Button onClick={() => setIsEditingName(false)} variant="ghost" size="icon" className="h-12 w-12 rounded-2xl"><Check className="h-5 w-5 text-primary" /></Button>
+                        <Button size="sm" variant="ghost" onClick={() => setIsEditingName(false)}><Check className="h-4 w-4" /></Button>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-4 flex-1 cursor-pointer group/title" onClick={() => setIsEditingName(true)}>
-                        <h2 className="text-3xl font-black text-foreground group-hover/title:text-primary transition-colors tracking-tight">
+                      <div className="flex items-center gap-3 flex-1 cursor-pointer group/title" onClick={() => setIsEditingName(true)}>
+                        <h2 className="text-lg font-bold text-foreground group-hover/title:text-primary transition-colors">
                           {selected.name}
                         </h2>
-                        <Edit2 className="h-4 w-4 text-muted-foreground opacity-0 group-hover/title:opacity-100 transition-all" />
+                        <Edit2 className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover/title:opacity-100" />
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-6">
-                     <div className="flex items-center gap-2 px-4 py-2 bg-secondary/60 rounded-2xl">
-                        <ListMusic className="h-4 w-4 text-primary" />
-                        <span className="text-xs font-black uppercase tracking-widest text-foreground">{selected.items?.length || 0} Items</span>
-                     </div>
-                     <div className="flex items-center gap-2 px-4 py-2 bg-secondary/60 rounded-2xl">
-                        <Clock className="h-4 w-4 text-primary" />
-                        <span className="text-xs font-black uppercase tracking-widest text-foreground">
-                          {selected.items?.reduce((a: number, i: any) => a + (Number(i.duration) || 0), 0) || 0}s Runtime
-                        </span>
-                     </div>
+                  <p className="text-xs text-muted-foreground font-medium mt-1 flex items-center gap-2">
+                    <Clock className="h-3 w-3" />
+                    Total: {selected.items?.length || 0} items • {selected.items?.reduce((a: number, i: any) => a + (Number(i.duration) || 0), 0) || 0}s duration
+                  </p>
+                </div>
+                {!selected.items || selected.items.length === 0 ? (
+                  <div className="p-10 text-center text-muted-foreground text-sm">
+                    No items yet. Select media from the library panel.
                   </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                  {!selected.items || selected.items.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full py-20 text-center opacity-40">
-                       <Plus className="h-12 w-12 mb-4" />
-                       <p className="text-sm font-bold uppercase tracking-[0.2em]">Add content from the library</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {selected.items.map((item: any) => {
-                        const m = item.media || {};
-                        const isVideo = m.type === 'video';
-                        return (
-                          <div key={item.id} className="flex flex-row items-center gap-4 p-4 bg-card/60 border border-border/40 rounded-[2rem] hover:border-primary/30 hover:bg-secondary/20 transition-all group overflow-hidden">
-                            <div className="flex items-center gap-3">
-                               <GripVertical className="h-5 w-5 text-muted-foreground/30 cursor-grab shrink-0 group-hover:text-muted-foreground/60 transition-colors" />
-                               <div className="h-16 w-24 rounded-2xl bg-secondary flex items-center justify-center shrink-0 overflow-hidden relative border border-border/40 shadow-sm">
-                                  {m.thumbnail ? (
-                                    <img src={m.thumbnail} alt={m.name} className="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:scale-105 transition-all duration-500" />
-                                  ) : null}
-                                  <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
-                                     {m.type === "image" ? <ImageIcon className="h-5 w-5 text-white/80" /> : <Film className="h-5 w-5 text-white/80" />}
-                                  </div>
-                               </div>
-                            </div>
-                            
-                            <div className="flex-1 min-w-0 flex flex-col gap-1">
-                               <p className="text-base font-bold text-foreground truncate">{m.name || "Unknown Media"}</p>
-                               <div className="flex items-center gap-2">
-                                  <span className={cn(
-                                    "text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg",
-                                    isVideo ? "bg-amber-100/50 text-amber-700" : "bg-blue-100/50 text-blue-700"
-                                  )}>
-                                    {m.type || "unknown"}
-                                  </span>
-                               </div>
-                            </div>
-
-                            <div className="shrink-0 flex items-center gap-4">
-                              <PlaylistDurationInput 
-                                initialValue={item.duration || 10}
-                                onSave={(val) => updateItemDuration(item.id, val)}
-                                disabled={isVideo}
-                              />
-                              <button
-                                onClick={() => removeItem(item.id)}
-                                className="h-10 w-10 flex items-center justify-center text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 rounded-xl transition-all"
-                              >
-                                <Trash2 className="h-5 w-5" />
-                              </button>
-                            </div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {selected.items.map((item: any) => {
+                      const m = item.media || {};
+                      const isVideo = m.type === 'video';
+                      return (
+                        <div key={item.id} className="flex flex-row items-center gap-3 p-3 hover:bg-accent/10 transition-colors group">
+                          <GripVertical className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground cursor-grab shrink-0" />
+                          <div className="h-10 w-14 rounded bg-secondary flex items-center justify-center shrink-0 overflow-hidden relative border border-border">
+                            {m.thumbnail && <img src={m.thumbnail} alt={m.name} className="absolute inset-0 w-full h-full object-cover opacity-80" />}
+                            {m.type === "image" ? <ImageIcon className="h-4 w-4 text-muted-foreground relative z-10" /> : <Film className="h-4 w-4 text-muted-foreground relative z-10" />}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{m.name || "Unknown Media"}</p>
+                            <p className="text-xs text-muted-foreground uppercase text-[10px] tracking-wider font-bold">{m.type}</p>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-2">
+                            <PlaylistDurationInput 
+                              initialValue={item.duration || 10}
+                              onSave={(val) => updateItemDuration(item.id, val)}
+                              disabled={isVideo}
+                            />
+                            <button
+                              onClick={() => removeItem(item.id)}
+                              className="text-muted-foreground hover:text-destructive p-1 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </>
             ) : (
-              <div className="h-full flex flex-col items-center justify-center p-20 text-center space-y-6">
-                <div className="w-20 h-20 bg-secondary rounded-[2.5rem] flex items-center justify-center shadow-xl">
-                   <ListMusic className="h-10 w-10 text-primary opacity-40" />
-                </div>
-                <div>
-                   <h3 className="text-xl font-black text-foreground tracking-tight">Select a Sequence</h3>
-                   <p className="text-muted-foreground text-sm font-medium mt-1">Pick a playlist from the catalog to start curating.</p>
-                </div>
+              <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">
+                Select a playlist to edit contents
               </div>
             )}
+          </div>
+
+          {/* Right: Media Library */}
+          <div className="lg:col-span-3 space-y-4">
+            <div className="bg-card border border-border rounded-lg overflow-hidden flex flex-col max-h-[600px]">
+              <div className="p-4 border-b border-border bg-card">
+                <h2 className="text-sm font-medium text-foreground flex items-center gap-2 uppercase tracking-wider">
+                  Media Library
+                </h2>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                {media.map((m: any) => (
+                  <div key={m.id} className="group relative bg-secondary/20 border border-border rounded p-2 flex items-center gap-2 hover:bg-secondary/40 transition-colors">
+                    <div className="h-10 w-12 rounded bg-secondary overflow-hidden relative shrink-0">
+                      {m.thumbnail && <img src={m.thumbnail} className="absolute inset-0 w-full h-full object-cover opacity-60" />}
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        {m.type === "image" ? <ImageIcon className="h-4 w-4" /> : <Film className="h-4 w-4" />}
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] font-medium text-foreground truncate">{m.name}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      disabled={!selected}
+                      onClick={() => addItem(m)}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
