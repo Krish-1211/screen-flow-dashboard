@@ -260,8 +260,19 @@ export default function ScreensPage() {
 
         {/* Spaces Grid */}
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground/70">Spaces</h3>
+            {currentSpaceId && !searchTerm && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleGoBack}
+                  className="h-8 rounded-xl border-dashed border-border/60 text-[10px] font-bold uppercase tracking-tight px-4 hover:bg-primary/5 hover:text-primary transition-all group"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5 mr-2 group-hover:-translate-x-0.5 transition-transform" />
+                  Up one level
+                </Button>
+            )}
           </div>
           
           {loadingSpaces ? (
@@ -281,22 +292,8 @@ export default function ScreensPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-              {currentSpaceId && !searchTerm && (
-                 <div 
-                  onClick={handleGoBack}
-                  className="flex flex-col justify-center gap-4 p-8 bg-secondary/10 border-2 border-dashed border-border/40 rounded-[2rem] cursor-pointer hover:bg-secondary/20 hover:border-primary/20 transition-all group h-[180px]"
-                 >
-                   <div className="w-12 h-12 rounded-2xl bg-secondary flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-all shadow-sm">
-                      <ArrowLeft className="h-6 w-6" />
-                   </div>
-                   <div>
-                     <span className="text-lg font-bold group-hover:text-primary transition-colors">Go Back</span>
-                     <p className="text-sm text-muted-foreground">Up one level</p>
-                   </div>
-                 </div>
-              )}
-              
               {filteredSpaces.map((space) => (
+
                 <div 
                   key={space.id}
                   className="relative flex flex-col justify-between p-8 bg-card border border-border/40 rounded-[2rem] hover:border-primary/40 hover:shadow-2xl hover:shadow-primary/5 transition-all cursor-pointer group h-[180px] overflow-hidden"
