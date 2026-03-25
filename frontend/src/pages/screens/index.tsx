@@ -423,7 +423,7 @@ export default function ScreensPage() {
                           value={screen.playlistId?.toString() || "none"}
                           onValueChange={(val) => updateScreenMutation.mutate({ 
                             id: screen.id, 
-                            payload: { playlistId: val === "none" ? undefined : parseInt(val) } 
+                            payload: { playlistId: val === "none" ? null : parseInt(val) } 
                           })}
                         >
                           <SelectTrigger className="w-full h-10 bg-transparent border-none p-0 text-sm font-bold cursor-pointer ring-offset-0 focus:ring-0">
