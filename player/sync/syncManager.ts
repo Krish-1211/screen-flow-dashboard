@@ -106,13 +106,26 @@ export class SyncManager {
     }
   }
 
+  private getLocalTimeParams(): string {
+    const now = new Date();
+    // HH:mm:ss
+    const time = now.toTimeString().split(' ')[0];
+    // JS getDay(): 0=Sun, 1=Mon... 6=Sat
+    // Our logic: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+    const jsDay = now.getDay();
+    const localDay = jsDay === 0 ? 6 : jsDay - 1;
+    return `&local_time=${time}&local_day=${localDay}`;
+  }
+
   private async fetchPlayerPlaylist(): Promise<Playlist> {
-    const response = await axios.get(`${this.apiBaseUrl}/screens/player?device_id=${this.deviceId}`);
+    const params = this.getLocalTimeParams();
+    const response = await axios.get(`${this.apiBaseUrl}/screens/player?device_id=${this.deviceId}${params}`);
     return response.data as Playlist;
   }
 
   private async fetchVersion(): Promise<string> {
-    const response = await axios.head(`${this.apiBaseUrl}/screens/player?device_id=${this.deviceId}`);
+    const params = this.getLocalTimeParams();
+    const response = await axios.head(`${this.apiBaseUrl}/screens/player?device_id=${this.deviceId}${params}`);
     const etag = response.headers.etag as string | undefined;
     if (etag) {
       return etag;

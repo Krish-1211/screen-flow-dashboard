@@ -685,10 +685,46 @@ app.get('/screens/player', async (req, res) => {
         return res.json({ name: "Fallback", items: [] });
     }
 
+    // --- SCHEDULER LOGIC ---
+    let activePlaylistId = screen.playlist_id;
+
+    const { data: schedules, error: schedError } = await supabase
+        .from('schedules')
+        .select('*')
+        .eq('client_id', CLIENT_ID);
+
+    if (!schedError && schedules && schedules.length > 0) {
+        // Use query params or fallback to server time
+        const now = new Date();
+        const serverTime = now.toTimeString().split(' ')[0]; // HH:mm:ss
+        const serverDay = now.getDay() === 0 ? 6 : now.getDay() - 1; // 0=Mon... 6=Sun
+
+        const localTime = req.query.local_time || serverTime;
+        const localDay = req.query.local_day !== undefined ? parseInt(req.query.local_day) : serverDay;
+
+        // Find match
+        const activeSched = schedules.find(s => {
+            const d = s.data;
+            if (!d || d.active === false) return false;
+            if (String(d.screen_id) !== String(screen.id)) return false;
+            if (!d.days_of_week || !d.days_of_week.includes(localDay)) return false;
+            return localTime >= d.start_time && localTime < d.end_time;
+        });
+
+        if (activeSched) {
+            logger.info({ screen: screen.name, playlist_id: activeSched.data.playlist_id }, 'Active schedule found');
+            activePlaylistId = activeSched.data.playlist_id;
+        }
+    }
+
+    if (!activePlaylistId) {
+        return res.json({ name: "No Content", items: [] });
+    }
+
     const { data: playlists, error: plError } = await supabase
         .from('playlists')
         .select('*')
-        .eq('id', screen.playlist_id)
+        .eq('id', activePlaylistId)
         .eq('client_id', CLIENT_ID);
 
     if (plError || !playlists || playlists.length === 0) return res.json({ name: "No Content", items: [] });
