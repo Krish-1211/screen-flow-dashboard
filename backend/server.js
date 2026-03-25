@@ -552,10 +552,25 @@ app.get('/playlists', async (req, res) => {
 });
 
 app.post('/playlists', async (req, res) => {
+    let { name } = req.body;
+    if (!name) name = "New Playlist";
+
+    // 1. Check for duplicates
+    const { data: existing } = await supabase
+        .from('playlists')
+        .select('name')
+        .eq('client_id', CLIENT_ID)
+        .eq('name', name)
+        .maybeSingle();
+
+    if (existing) {
+        return res.status(400).json({ error: `A playlist named "${name}" already exists.` });
+    }
+
     const playlist = {
         id: Date.now().toString(),
         client_id: CLIENT_ID,
-        name: req.body.name,
+        name,
         items: req.body.items || []
     };
 
@@ -567,10 +582,31 @@ app.post('/playlists', async (req, res) => {
 
 app.put('/playlists/:id', async (req, res) => {
     const { name, items } = req.body;
+    const { id } = req.params;
+
+    // 1. Check for duplicates if name is changing
+    if (name) {
+        const { data: existing } = await supabase
+            .from('playlists')
+            .select('id')
+            .eq('client_id', CLIENT_ID)
+            .eq('name', name)
+            .neq('id', id)
+            .maybeSingle();
+
+        if (existing) {
+            return res.status(400).json({ error: `The name "${name}" is already taken.` });
+        }
+    }
+
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (items !== undefined) updates.items = items;
+
     const { data, error } = await supabase
         .from('playlists')
-        .update({ name, items: items || [] })
-        .eq('id', req.params.id)
+        .update(updates)
+        .eq('id', id)
         .eq('client_id', CLIENT_ID)
         .select();
 
@@ -582,6 +618,7 @@ app.put('/playlists/:id', async (req, res) => {
 });
 
 app.delete('/playlists/:id', async (req, res) => {
+
     const { error } = await supabase
         .from('playlists')
         .delete()

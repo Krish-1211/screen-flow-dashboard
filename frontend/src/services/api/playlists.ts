@@ -3,8 +3,8 @@ import api from '@/lib/axios';
 
 const mapPlaylist = (pl: any): Playlist => ({
     ...pl,
-    items: pl.items?.map((item: any) => ({
-        id: item.id,
+    items: pl.items?.map((item: any, index: number) => ({
+        id: item.id || `legacy-${index}`, // Stable ID fallback for items missing one
         mediaId: String(item.mediaId),
         media: item.media ? {
             id: String(item.media.id),
@@ -15,7 +15,7 @@ const mapPlaylist = (pl: any): Playlist => ({
             thumbnail: item.media.url // fallback for now
         } : undefined,
         duration: item.duration,
-        order: item.order
+        order: item.order ?? index
     })) || []
 });
 
@@ -32,6 +32,7 @@ export const playlistsApi = {
         const response = await api.post('/playlists/', {
             name: payload.name || 'New Playlist',
             items: payload.items?.map((item, index) => ({
+                id: item.id || Math.random().toString(36).substr(2, 9),
                 mediaId: String(item.mediaId),
                 duration: item.duration,
                 order: item.order ?? index
@@ -44,12 +45,12 @@ export const playlistsApi = {
         if (payload.name !== undefined) updatePayload.name = payload.name;
         if (payload.items !== undefined) {
             updatePayload.items = payload.items.map((item, index) => ({
+                id: item.id,
                 mediaId: String(item.mediaId),
                 duration: item.duration,
                 order: item.order ?? index
             }));
         }
-
 
         const response = await api.put(`/playlists/${id}`, updatePayload);
         return mapPlaylist(response.data);

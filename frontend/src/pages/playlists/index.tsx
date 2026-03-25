@@ -53,7 +53,13 @@ export default function PlaylistsPage() {
   });
 
   const addPlaylist = () => {
-    createMutation.mutate("New Playlist");
+    let name = "New Playlist";
+    let count = 1;
+    while (playlists.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+      name = `New Playlist (${count})`;
+      count++;
+    }
+    createMutation.mutate(name);
   };
 
   const selected = playlists.find((p: any) => p.id === selectedId);
@@ -182,6 +188,10 @@ export default function PlaylistsPage() {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               if (tempName.trim() !== "" && tempName !== selected.name) {
+                                if (playlists.some(p => p.name.toLowerCase() === tempName.toLowerCase() && p.id !== selected.id)) {
+                                  toast.error(`A playlist named "${tempName}" already exists`);
+                                  return;
+                                }
                                 updatePlaylistName(tempName);
                                 setIsEditingName(false);
                               } else if (tempName.trim() === "") {
@@ -211,13 +221,17 @@ export default function PlaylistsPage() {
                             size="sm" 
                             variant="ghost" 
                             className="h-8 w-8 p-0 text-primary hover:bg-primary/10" 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (tempName.trim() !== "" && tempName !== selected.name) {
-                                updatePlaylistName(tempName);
-                              }
-                              setIsEditingName(false);
-                            }}
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               if (tempName.trim() !== "" && tempName !== selected.name) {
+                                 if (playlists.some(p => p.name.toLowerCase() === tempName.toLowerCase() && p.id !== selected.id)) {
+                                   toast.error(`A playlist named "${tempName}" already exists`);
+                                   return;
+                                 }
+                                 updatePlaylistName(tempName);
+                               }
+                               setIsEditingName(false);
+                             }}
                           >
                             <Check className="h-4 w-4" />
                           </Button>
