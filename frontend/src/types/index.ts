@@ -17,8 +17,7 @@ export interface Screen {
     playlistId?: number;
     lastPing?: string;
     device_id?: string;
-    groupId?: string;
-    group_name?: string;
+    nodeId?: string;
 }
 
 export interface Media {

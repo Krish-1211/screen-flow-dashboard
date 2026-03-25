@@ -2,8 +2,11 @@ import type { Screen } from '@/types';
 import api from '@/lib/axios';
 
 export const screensApi = {
-    getAll: async (): Promise<Screen[]> => {
-        const response = await api.get('/screens/');
+    getAll: async (node_id?: string): Promise<Screen[]> => {
+        let url = '/screens/';
+        if (node_id) url += `?node_id=${node_id === 'root' ? 'root' : node_id}`;
+        
+        const response = await api.get(url);
         return response.data.map((s: any) => ({
             id: String(s.id),
             name: s.name,
@@ -11,8 +14,7 @@ export const screensApi = {
             playlistId: s.playlistId,
             lastPing: s.lastPing,
             device_id: s.device_id,
-            groupId: s.groupId,
-            group_name: s.group_name
+            nodeId: s.nodeId
         })) as Screen[];
     },
     getById: async (id: string | number): Promise<Screen> => {
@@ -24,10 +26,11 @@ export const screensApi = {
             status: s.status,
             playlistId: s.playlistId,
             lastPing: s.lastPing,
-            device_id: s.device_id
+            device_id: s.device_id,
+            nodeId: s.nodeId
         } as Screen;
     },
-    create: async (payload: { name: string, playlist_id?: string | number }): Promise<Screen> => {
+    create: async (payload: { name: string, playlist_id?: string | number, nodeId?: string }): Promise<Screen> => {
         const fullPayload = {
             ...payload,
             device_id: crypto.randomUUID()
@@ -40,7 +43,8 @@ export const screensApi = {
             status: s.status,
             playlistId: s.playlistId,
             lastPing: s.lastPing,
-            device_id: s.device_id
+            device_id: s.device_id,
+            nodeId: s.nodeId
         } as Screen;
     },
     register: async (payload: { deviceId: string, name: string, playlist_id?: string | number }): Promise<Screen> => {
@@ -59,7 +63,7 @@ export const screensApi = {
         const updatePayload: any = {};
         if (payload.name !== undefined) updatePayload.name = payload.name;
         if (payload.playlistId !== undefined) updatePayload.playlist_id = payload.playlistId;
-        if (payload.groupId !== undefined) updatePayload.groupId = payload.groupId;
+        if (payload.nodeId !== undefined) updatePayload.node_id = payload.nodeId;
 
         const response = await api.put(`/screens/${id}`, updatePayload);
         const s = response.data;
@@ -69,7 +73,8 @@ export const screensApi = {
             status: s.status,
             playlistId: s.playlistId,
             lastPing: s.lastPing,
-            device_id: s.device_id
+            device_id: s.device_id,
+            nodeId: s.nodeId
         } as Screen;
     },
     delete: async (id: string | number): Promise<void> => {
@@ -87,6 +92,27 @@ export const screensApi = {
     },
     bulkUpdate: async (screen_ids: (string | number)[], playlist_id: string | number): Promise<{ updated: number, playlist_id: string }> => {
         const response = await api.put('/screens/bulk', { screen_ids, playlist_id });
+        return response.data;
+    },
+
+    // ── Hierarchical Nodes API ──
+    getNodes: async (parent_id?: string): Promise<any[]> => {
+        const response = await api.get(`/nodes?parent_id=${parent_id || 'root'}`);
+        return response.data;
+    },
+    createNode: async (name: string, parent_id?: string): Promise<any> => {
+        const response = await api.post('/nodes', { name, parent_id });
+        return response.data;
+    },
+    updateNode: async (id: string, updates: { name?: string, parent_id?: string }): Promise<any> => {
+        const response = await api.put(`/nodes/${id}`, updates);
+        return response.data;
+    },
+    deleteNode: async (id: string): Promise<void> => {
+        await api.delete(`/nodes/${id}`);
+    },
+    getNodePath: async (id: string): Promise<any[]> => {
+        const response = await api.get(`/nodes/path/${id}`);
         return response.data;
     }
 };

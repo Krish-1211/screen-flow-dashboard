@@ -81,25 +81,7 @@ async function checkSupabase() {
 checkSupabase();
 
 // SCREENS
-// SCREENS
-app.get('/screens', async (req, res) => {
-    const { data, error } = await supabase
-        .from('screens')
-        .select('*')
-        .eq('client_id', CLIENT_ID);
 
-    if (error) return res.status(500).json({ error });
-
-    // Map Supabase fields back to what the frontend expects
-    const normalized = (data || []).map(s => ({
-        ...s,
-        playlistId: s.playlist_id,
-        lastPing: s.last_ping,
-        deviceId: s.device_id,
-        device_id: s.device_id
-    }));
-    res.json(normalized);
-});
 
 app.post('/screens', async (req, res) => {
     const deviceId = req.body.device_id || req.body.deviceId || crypto.randomUUID();
@@ -115,6 +97,7 @@ app.post('/screens', async (req, res) => {
     const screenData = {
         name: req.body.name,
         playlist_id: req.body.playlistId || req.body.playlist_id,
+        node_id: req.body.nodeId || req.body.node_id || null,
         status: 'online',
         last_ping: new Date().toISOString()
     };
@@ -148,6 +131,7 @@ app.put('/screens/:id', async (req, res) => {
         name: req.body.name,
         device_id: req.body.device_id || req.body.deviceId,
         playlist_id: req.body.playlistId || req.body.playlist_id,
+        node_id: req.body.nodeId || req.body.node_id,
         status: req.body.status,
         last_ping: new Date().toISOString()
     };
@@ -230,42 +214,159 @@ app.post('/screens/register', async (req, res) => {
     }
 });
 
-// GROUPS
-app.get('/groups', (req, res) => {
-    const db = readDB();
-    const groups = db.groups || [];
+// ── Step 6: Hierarchical Nodes (Folders) API ──
+
+app.get('/nodes', async (req, res) => {
+    const { parent_id } = req.query;
     
-    // Always provide at least one default group if none are configured
-    if (groups.length === 0) {
-        return res.json([{
-            id: "default",
-            name: "Default Group",
-            screen_count: (db.screens || []).filter(s => !s.groupId || s.groupId === "default").length
-        }]);
+    let query = supabase
+        .from('nodes')
+        .select('*')
+        .eq('client_id', CLIENT_ID);
+
+    if (parent_id === 'root' || !parent_id) {
+        query = query.is('parent_id', null);
+    } else {
+        query = query.eq('parent_id', parent_id);
     }
 
-    res.json(groups.map(g => ({
-        ...g,
-        screen_count: (db.screens || []).filter(s => s.groupId === g.id).length
-    })));
+    const { data, error } = await query.order('name');
+    if (error) return res.status(500).json({ error });
+    res.json(data);
 });
 
-app.post('/groups', (req, res) => {
-    const db = readDB();
-    if (!db.groups) db.groups = [];
-    const group = { id: Date.now().toString(), name: req.body.name };
-    db.groups.push(group);
-    writeDB(db);
-    res.json(group);
+app.get('/nodes/path/:id', async (req, res) => {
+    // Helper to get breadcrumb path
+    const { id } = req.params;
+    const path = [];
+    let currentId = id;
+
+    while (currentId) {
+        const { data, error } = await supabase
+            .from('nodes')
+            .select('id, name, parent_id')
+            .eq('id', currentId)
+            .maybeSingle();
+        
+        if (error || !data) break;
+        path.unshift(data);
+        currentId = data.parent_id;
+        if (path.length > 10) break; // Absolute depth safety
+    }
+
+    res.json(path);
 });
 
-app.delete('/groups/:id', (req, res) => {
-    const db = readDB();
-    db.groups = (db.groups || []).filter(g => g.id !== req.params.id);
-    // Unassign screens from this group
-    db.screens.forEach(s => { if (s.groupId === req.params.id) delete s.groupId; });
-    writeDB(db);
+app.post('/nodes', async (req, res) => {
+    const { name, parent_id } = req.body;
+    const node = {
+        id: crypto.randomUUID(),
+        name: name || 'New Folder',
+        parent_id: parent_id === 'root' ? null : parent_id,
+        client_id: CLIENT_ID,
+        created_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase.from('nodes').insert(node);
+    if (error) return res.status(500).json({ error });
+    res.json(node);
+});
+
+app.put('/nodes/:id', async (req, res) => {
+    const { name, parent_id } = req.body;
+    const { id } = req.params;
+
+    // Prevention of circular reference
+    if (parent_id && parent_id === id) {
+        return res.status(400).json({ error: "A folder cannot be its own parent" });
+    }
+
+    if (parent_id && parent_id !== 'root') {
+        // Basic circular check (is parent_id a descendant of id?)
+        let checkId = parent_id;
+        while (checkId) {
+            const { data } = await supabase
+                .from('nodes')
+                .select('parent_id')
+                .eq('id', checkId)
+                .maybeSingle();
+            if (!data) break;
+            if (data.parent_id === id) {
+                return res.status(400).json({ error: "Circular reference detected" });
+            }
+            checkId = data.parent_id;
+        }
+    }
+
+    const updates = {};
+    if (name) updates.name = name;
+    if (parent_id !== undefined) updates.parent_id = parent_id === 'root' ? null : parent_id;
+
+    const { data, error } = await supabase
+        .from('nodes')
+        .update(updates)
+        .eq('id', id)
+        .eq('client_id', CLIENT_ID)
+        .select()
+        .single();
+
+    if (error) return res.status(500).json({ error });
+    res.json(data);
+});
+
+app.delete('/nodes/:id', async (req, res) => {
+    const { id } = req.params;
+
+    // Move children nodes to root or delete? User said "handle safely"
+    // We will move child nodes and screens to the parent of the deleted node
+    const { data: node } = await supabase
+        .from('nodes')
+        .select('parent_id')
+        .eq('id', id)
+        .maybeSingle();
+
+    const newParent = node ? node.parent_id : null;
+
+    // Update child nodes
+    await supabase.from('nodes').update({ parent_id: newParent }).eq('parent_id', id);
+    // Update screens
+    await supabase.from('screens').update({ node_id: newParent }).eq('node_id', id);
+
+    const { error } = await supabase
+        .from('nodes')
+        .delete()
+        .eq('id', id)
+        .eq('client_id', CLIENT_ID);
+
+    if (error) return res.status(500).json({ error });
     res.status(204).send();
+});
+
+// Update Screen logic for node_id
+app.get('/screens', async (req, res) => {
+    const { node_id } = req.query;
+    let query = supabase
+        .from('screens')
+        .select('*')
+        .eq('client_id', CLIENT_ID);
+
+    if (node_id === 'root') {
+        query = query.is('node_id', null);
+    } else if (node_id) {
+        query = query.eq('node_id', node_id);
+    }
+
+    const { data, error } = await query;
+    if (error) return res.status(500).json({ error });
+
+    const normalized = (data || []).map(s => ({
+        ...s,
+        playlistId: s.playlist_id,
+        lastPing: s.last_ping,
+        deviceId: s.device_id,
+        nodeId: s.node_id
+    }));
+    res.json(normalized);
 });
 
 // MEDIA
