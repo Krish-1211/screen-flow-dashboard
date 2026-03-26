@@ -93,7 +93,7 @@ export default function ScreensPage() {
 
   const { data: playlists = [] } = useQuery<Playlist[]>({
     queryKey: ['playlists'],
-    queryFn: playlistsApi.getAll
+    queryFn: () => playlistsApi.getAll()
   });
 
   // ── Mutations ──

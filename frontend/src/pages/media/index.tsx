@@ -28,7 +28,7 @@ export default function MediaLibraryPage() {
 
   const { data: media = [], isLoading } = useQuery({
     queryKey: ['media'],
-    queryFn: mediaApi.getAll
+    queryFn: () => mediaApi.getAll()
   });
 
   const deleteMutation = useMutation({
@@ -73,7 +73,7 @@ export default function MediaLibraryPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => mediaApi.update(id, name),
+    mutationFn: ({ id, name }: { id: string; name: string }) => mediaApi.update(id, { name }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["media"] });
       setEditingMedia(null);
