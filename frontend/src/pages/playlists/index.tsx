@@ -329,7 +329,7 @@ export default function PlaylistsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left: Playlists Tree */}
           <div className="lg:col-span-3 space-y-4">
-            <div className="bg-card border border-border rounded-lg overflow-hidden flex flex-col h-[600px]">
+            <div className="bg-card border border-border rounded-lg overflow-hidden flex flex-col h-fit max-h-[800px]">
               <div className="p-4 border-b border-border flex items-center justify-between bg-card">
                 <h2 className="text-sm font-medium text-foreground uppercase tracking-wider">Playlists</h2>
                 <div className="flex items-center gap-1">
@@ -353,7 +353,7 @@ export default function PlaylistsPage() {
           </div>
 
           {/* Center: Editor */}
-          <div className="lg:col-span-6 bg-card border border-border rounded-lg flex flex-col h-[600px]">
+          <div className="lg:col-span-6 bg-card border border-border rounded-lg flex flex-col h-fit min-h-[400px] max-h-[800px]">
             {selected ? (
               <>
                 <div className="p-4 border-b border-border bg-card/50">
@@ -442,7 +442,7 @@ export default function PlaylistsPage() {
 
           {/* Right: Media Library Tree */}
           <div className="lg:col-span-3 space-y-4">
-            <div className="bg-card border border-border rounded-lg overflow-hidden flex flex-col h-[600px]">
+            <div className="bg-card border border-border rounded-lg overflow-hidden flex flex-col h-fit max-h-[800px]">
               <div className="p-4 border-b border-border bg-card flex items-center justify-between">
                 <h2 className="text-sm font-medium text-foreground flex items-center gap-2 uppercase tracking-wider">
                   Media Library
