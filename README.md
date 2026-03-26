@@ -25,4 +25,4 @@ To build for production:
 npm run build
 ```
 
-Then host the `dist/` directory on any modern static provider (Vercel, Netlify, Nginx, etc.).
+Then host the `dist/` directory on any modern static provider (Netlify, Nginx, etc.).
