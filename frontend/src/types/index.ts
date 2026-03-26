@@ -29,6 +29,9 @@ export interface Media {
     url: string;
     duration?: number;
     thumbnail?: string;
+    parent_id?: string | null;
+    node_type: 'file' | 'folder';
+    children?: Media[];
 }
 
 export interface PlaylistItem {
@@ -42,7 +45,10 @@ export interface PlaylistItem {
 export interface Playlist {
     id: number | string;
     name: string;
-    items: PlaylistItem[];
+    items?: PlaylistItem[];
+    parent_id?: string | null;
+    node_type: 'playlist' | 'folder';
+    children?: Playlist[];
     updatedAt?: string;
     version?: string;
 }

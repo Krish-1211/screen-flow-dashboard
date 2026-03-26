@@ -19,6 +19,27 @@ const toSeconds = (t) => {
     return h * 3600 + m * 60 + s;
 };
 
+// Tree Helper
+function transformToTree(items) {
+    const map = {};
+    const roots = [];
+    
+    items.forEach(item => {
+        item.children = [];
+        map[item.id] = item;
+    });
+
+    items.forEach(item => {
+        if (item.parent_id && map[item.parent_id]) {
+            map[item.parent_id].children.push(item);
+        } else {
+            roots.push(item);
+        }
+    });
+
+    return roots;
+}
+
 const CLIENT_ID = "client_1";
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -400,13 +421,42 @@ app.get('/screens', async (req, res) => {
 // MEDIA
 app.get('/media', async (req, res) => {
     res.set('Cache-Control', 'no-store');
-    const { data, error } = await supabase
+    const { tree, parent_id } = req.query;
+    let query = supabase
         .from('media')
         .select('*')
         .eq('client_id', CLIENT_ID);
 
+    if (parent_id) {
+        query = query.eq('parent_id', parent_id === 'root' ? null : parent_id);
+    }
+
+    const { data, error } = await query.order('name');
+
     if (error) return res.status(500).json({ error });
+
+    if (tree === 'true') {
+        return res.json(transformToTree(data || []));
+    }
     res.json(data);
+});
+
+app.post('/media/folder', async (req, res) => {
+    const { name, parent_id } = req.body;
+    const folder = {
+        id: Date.now().toString(),
+        client_id: CLIENT_ID,
+        name: name || 'New Folder',
+        type: 'folder', // legacy compatibility if needed
+        node_type: 'folder',
+        parent_id: parent_id || null,
+        url: '',
+        size: 0
+    };
+
+    const { error } = await supabase.from('media').insert(folder);
+    if (error) return res.status(500).json({ error });
+    res.json(folder);
 });
 
 const sanitizeFileName = (name) => {
@@ -444,8 +494,10 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
     const media = {
         id: Date.now().toString(),
         client_id: CLIENT_ID,
-        name: req.file.originalname,
+        name: req.body.name || req.file.originalname,
         type: req.file.mimetype.startsWith('video') ? 'video' : 'image',
+        node_type: 'file',
+        parent_id: req.body.parent_id || null,
         url: urlData.publicUrl,
         size: req.file.size
     };
@@ -469,6 +521,8 @@ app.post('/media/youtube', async (req, res) => {
         client_id: CLIENT_ID,
         name: req.body.name || "YouTube",
         type: 'youtube',
+        node_type: 'file',
+        parent_id: req.body.parent_id || null,
         url: req.body.url,
         size: 0
     };
@@ -503,13 +557,13 @@ app.delete('/media/:id', async (req, res) => {
     if (getError) return res.status(500).json({ error: getError });
 
     if (media) {
-        // 2. Delete from Supabase Storage
-        // We need the filename from the URL or name. Usually, we should store the storage_path.
-        // For now, let's try to extract it from the URL or name if possible.
-        // Assuming the file name in storage matches what was uploaded.
-        // Based on our upload logic: fileName = `${Date.now()}-${req.file.originalname}`
+        // Move children to parent of deleted node
+        const newParent = media.parent_id || null;
+        await supabase.from('media').update({ parent_id: newParent }).eq('parent_id', id);
+
+        // Delete from Supabase Storage
         const storagePath = media.url.split('/').pop();
-        if (storagePath) {
+        if (storagePath && media.node_type !== 'folder') {
             await supabase.storage.from('media').remove([storagePath]);
         }
 
@@ -534,6 +588,7 @@ app.delete('/media/:id', async (req, res) => {
 
 // PLAYLISTS
 app.get('/playlists', async (req, res) => {
+    const { tree } = req.query;
     const { data: playlists, error: plError } = await supabase
         .from('playlists')
         .select('*')
@@ -560,6 +615,11 @@ app.get('/playlists', async (req, res) => {
             media: mediaMap[item.mediaId]
         }))
     }));
+
+    if (tree === 'true') {
+        const treeData = transformToTree(enriched);
+        return res.json(treeData);
+    }
     
     res.json(enriched);
 });
@@ -584,6 +644,8 @@ app.post('/playlists', async (req, res) => {
         id: Date.now().toString(),
         client_id: CLIENT_ID,
         name,
+        node_type: req.body.node_type || 'playlist',
+        parent_id: req.body.parent_id || null,
         items: req.body.items || []
     };
 
@@ -615,6 +677,8 @@ app.put('/playlists/:id', async (req, res) => {
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (items !== undefined) updates.items = items;
+    if (req.body.parent_id !== undefined) updates.parent_id = req.body.parent_id;
+    if (req.body.node_type !== undefined) updates.node_type = req.body.node_type;
 
     const { data, error } = await supabase
         .from('playlists')
@@ -631,6 +695,17 @@ app.put('/playlists/:id', async (req, res) => {
 });
 
 app.delete('/playlists/:id', async (req, res) => {
+
+    const { data: playlist } = await supabase
+        .from('playlists')
+        .select('parent_id')
+        .eq('id', req.params.id)
+        .maybeSingle();
+
+    if (playlist) {
+        const newParent = playlist.parent_id || null;
+        await supabase.from('playlists').update({ parent_id: newParent }).eq('parent_id', req.params.id);
+    }
 
     const { error } = await supabase
         .from('playlists')
