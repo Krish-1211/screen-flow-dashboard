@@ -141,6 +141,8 @@ export default function DisplayPlayerPage() {
     return () => clearInterval(interval);
   }, [deviceId]);
 
+  const currentPlaylistIdRef = useRef<string | number | undefined>(undefined);
+
   const loadPlaylist = useCallback(async (isInitial = false) => {
     if (!deviceId) return;
     try {
@@ -155,33 +157,44 @@ export default function DisplayPlayerPage() {
       
       if (data && data.items) {
         localStorage.setItem(`offline-playlist-${deviceId}`, JSON.stringify(data));
-        setPlaylist(data);
-        // Reset index if it's a new playlist
-        if (!playlist || playlist.id !== data.id) setCurrentIndex(0);
-        pendingPlaylistRef.current = null;
+        
+        // Use Ref to check for changes to avoid re-render loop
+        const newId = data.id;
+        const hasIdChanged = currentPlaylistIdRef.current !== newId;
+
+        if (isInitial || hasIdChanged) {
+          console.info(`[player] sync: new playlist detected (${currentPlaylistIdRef.current} -> ${newId})`);
+          setPlaylist(data);
+          currentPlaylistIdRef.current = newId;
+          if (hasIdChanged) setCurrentIndex(0);
+          pendingPlaylistRef.current = null;
+        } else {
+          // Same schedule, just update content silently for next transition
+          pendingPlaylistRef.current = data;
+        }
       } else {
-        setPlaylist(null);
+        if (currentPlaylistIdRef.current !== undefined) {
+           setPlaylist(null);
+           currentPlaylistIdRef.current = undefined;
+        }
       }
       
-      // Mark successful sync for watchdog
       localStorage.setItem(`sf_heartbeat_${deviceId}`, Date.now().toString());
     } catch (err) {
-      console.warn("[player] Sync failed, attempting fallback...", err);
-      
-      // Requirement 3: Fallback system
+      console.warn("[player] Sync failure, retrying 5s", err);
+      // Requirement 3: Fallback from cache
       const cached = localStorage.getItem(`offline-playlist-${deviceId}`);
-      if (cached && !playlist) {
-        console.info("[player] Using cached playlist fallback");
-        setPlaylist(JSON.parse(cached));
+      if (cached && currentPlaylistIdRef.current === undefined) {
+        const parsed = JSON.parse(cached);
+        setPlaylist(parsed);
+        currentPlaylistIdRef.current = parsed.id;
       }
-
-      // Requirement 3: 5s retry on failure
       setTimeout(() => loadPlaylist(false), 5000);
     } finally {
-      // Requirement 1: Life saving line - ALWAYS resolve loading
+      // Life saving resolution
       setLoading(false); 
     }
-  }, [deviceId, playlist]);
+  }, [deviceId]); // REMOVED playlist dependency here
 
   useEffect(() => {
     if (!deviceId) {
@@ -192,14 +205,14 @@ export default function DisplayPlayerPage() {
     // Initial fetch
     loadPlaylist(true);
     
-    // Polling @ 15s
+    // Polling @ 15s (Silent)
     const pollInterval = setInterval(() => loadPlaylist(false), 15000);
 
     // Watchdog @ 60s
     const watchdog = setInterval(() => {
       const lastPing = parseInt(localStorage.getItem(`sf_heartbeat_${deviceId}`) || "0");
       if (Date.now() - lastPing > 60000) {
-        console.warn("[watchdog] System hang detected. Forcing repair.");
+        console.warn("[watchdog] Hang detected! Forcing repair.");
         window.location.reload();
       }
     }, 15000);
