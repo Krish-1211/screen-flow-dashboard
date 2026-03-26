@@ -166,7 +166,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
             },
             body: JSON.stringify({
               deviceId: deviceId,
-              name: "Screen-" + deviceId.slice(0, 6)
+              name: "" // No auto-naming
             })
           });
           if (response.ok) {

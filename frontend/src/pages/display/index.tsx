@@ -54,10 +54,10 @@ export default function DisplayPlayerPage() {
       try {
         await screensApi.register({
           deviceId: finalId,
-          name: urlName || `Screen-${finalId.slice(0, 6)}`
+          name: urlName || "" // Do NOT auto-generate "Screen-..." names
         });
         localStorage.setItem("sf_registered", "true");
-        console.log("Screen auto-registered:", finalId, "as:", urlName || "Auto");
+        console.log("Screen registration check completed:", finalId);
       } catch (err) {
         // If it fails with 409 or similar, it might already exist
         console.warn("Auto-registration check:", err);

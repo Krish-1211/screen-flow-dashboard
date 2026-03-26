@@ -102,8 +102,13 @@ app.post('/screens', async (req, res) => {
         .eq('device_id', deviceId)
         .maybeSingle();
 
+    const screenName = req.body.name || "";
+    if (screenName.startsWith("Screen-")) {
+        return res.status(400).json({ error: "Reserved name prefix 'Screen-' is forbidden. Please provide a descriptive name." });
+    }
+
     const screenData = {
-        name: req.body.name,
+        name: screenName,
         playlist_id: req.body.playlistId || req.body.playlist_id,
         node_id: req.body.nodeId || req.body.node_id || null,
         status: 'online',
@@ -179,19 +184,19 @@ app.post('/screens/register', async (req, res) => {
         .eq('device_id', deviceId)
         .maybeSingle();
 
-    // 2. If not found by deviceId, search for a screen with this exact Name (Adoption Flow)
-    // This allows a manually created screen named 'lobby' to be 'claimed' by a physical machine.
-    if (!existing && name) {
+    // 2. Adoption Flow: Claim a screen pre-created by NAME
+    const requestedName = name || "";
+    if (!existing && requestedName && !requestedName.startsWith("Screen-")) {
         const { data: byName } = await supabase
             .from('screens')
             .select('*')
             .eq('client_id', CLIENT_ID)
-            .eq('name', name)
+            .eq('name', requestedName)
             .maybeSingle();
         
         if (byName) {
             existing = byName;
-            logger.info({ screenId: existing.id, name }, 'Screen Adoption: Linking machine to existing name record');
+            logger.info({ screenId: existing.id, name: requestedName }, 'Screen Adoption: Linking machine to existing record');
         }
     }
 
