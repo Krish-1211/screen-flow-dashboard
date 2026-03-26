@@ -11,6 +11,14 @@ import path from 'path';
 import { readDB, writeDB } from './src/lib/storage.js';
 import supabase from './src/lib/supabase.js';
 
+// Helper to convert HH:mm:ss or HH:mm to total seconds from midnight
+const toSeconds = (t) => {
+    if (!t) return 0;
+    const parts = t.split(':').map(Number);
+    const [h = 0, m = 0, s = 0] = parts;
+    return h * 3600 + m * 60 + s;
+};
+
 const CLIENT_ID = "client_1";
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -701,14 +709,32 @@ app.get('/screens/player', async (req, res) => {
 
         const localTime = req.query.local_time || serverTime;
         const localDay = req.query.local_day !== undefined ? parseInt(req.query.local_day) : serverDay;
+        const localSeconds = toSeconds(localTime);
 
         // Find match
         const activeSched = schedules.find(s => {
             const d = s.data;
             if (!d || d.active === false) return false;
             if (String(d.screen_id) !== String(screen.id)) return false;
-            if (!d.days_of_week || !d.days_of_week.includes(localDay)) return false;
-            return localTime >= d.start_time && localTime < d.end_time;
+            
+            // Support both days_of_week (array) and day_of_week (legacy/single)
+            const days = d.days_of_week || (d.day_of_week !== undefined ? [d.day_of_week] : []);
+            if (!days.includes(localDay)) return false;
+
+            const start = toSeconds(d.start_time);
+            const end = toSeconds(d.end_time);
+
+            // Debug verification logs
+            console.log(`[scheduler] evaluating ${screen.name}:`, {
+                localTime,
+                localSeconds,
+                start: d.start_time,
+                end: d.end_time,
+                startSeconds: start,
+                endSeconds: end
+            });
+
+            return localSeconds >= start && localSeconds < end;
         });
 
         if (activeSched) {
