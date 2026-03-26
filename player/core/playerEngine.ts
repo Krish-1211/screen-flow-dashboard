@@ -2,6 +2,7 @@ import type { PlaylistItem, Playlist } from '@/types';
 
 export class PlayerEngine {
   private playlist: PlaylistItem[] = [];
+  private playlistId: string | null = null;
   private nextPlaylist: PlaylistItem[] | null = null;
   private currentIndex = 0;
   private shouldRun = false;
@@ -17,23 +18,34 @@ export class PlayerEngine {
 
   public replacePlaylist(pl: Playlist) {
     const newItems = [...(pl.items || [])];
-    
+    const currentId = this.playlistId;
+    const newId = String(pl.id);
+
+    // If ID changed (e.g., schedule flipped), we force an immediate swap.
+    if (currentId !== newId) {
+       console.info(`[player] schedule change detected (${currentId} -> ${newId}), breaking current content`);
+       this.playlist = newItems;
+       this.playlistId = newId;
+       this.nextPlaylist = null;
+       this.currentIndex = 0;
+       
+       // Force an immediate skip of the current item (especially if it was a long video or empty)
+       this.wakeLoop();
+       
+       // If nothing was playing, start immediately
+       if (!this.loopRunning && this.shouldRun) {
+         this.startPlayback();
+       }
+       return;
+    }
+
+    // items change within the SAME playlist (admin updated current playlist items)
     if (JSON.stringify(newItems) === JSON.stringify(this.playlist)) {
       return;
     }
 
-    console.info('[player] playlist update received, buffering for next transition');
+    console.info('[player] same-playlist content update buffered for next transition');
     this.nextPlaylist = newItems;
-    
-    // If nothing is playing, start immediately
-    if (this.playlist.length === 0) {
-      this.playlist = this.nextPlaylist;
-      this.nextPlaylist = null;
-      this.currentIndex = 0;
-      if (!this.loopRunning) {
-        this.startPlayback();
-      }
-    }
   }
 
   public startPlayback() {

@@ -68,8 +68,8 @@ export class SyncManager {
   private async runLoop() {
     while (this.isRunning) {
       await this.checkAndSync();
-      // Polling fallback (5 minutes as requested)
-      await this.sleep(5 * 60 * 1000);
+      // Increase polling frequency for responsive scheduling (30 seconds)
+      await this.sleep(30 * 1000);
     }
     this.loopPromise = null;
   }
@@ -137,12 +137,13 @@ export class SyncManager {
     if (!playlist || !Array.isArray(playlist.items)) return;
 
     const cached = playlistStore.get();
-    const hasChanged = !cached || JSON.stringify(playlist) !== JSON.stringify(cached.playlist);
+    const hasItemsChanged = !cached || JSON.stringify(playlist.items) !== JSON.stringify(cached.playlist.items);
+    const hasIdChanged = !cached || String(playlist.id) !== String(cached.playlist.id);
 
-    if (hasChanged) {
+    if (hasItemsChanged || hasIdChanged) {
       playlistStore.save(playlist);
       versionManager.set(playlist.updatedAt || new Date().toISOString());
-      console.info('[player] playlist changed, persisted locally');
+      console.info(`[player] sync: playlist update applied (IdChanged=${hasIdChanged})`);
       this.onUpdate(playlist);
     } else {
       console.info('[player] playlist unchanged, skipping update');

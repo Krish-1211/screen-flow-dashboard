@@ -157,14 +157,20 @@ export default function DisplayPlayerPage() {
       if (data && data.items) {
         localStorage.setItem(`offline-playlist-${deviceId}`, JSON.stringify(data));
 
-        if (isInitial) {
+        // PROACTIVE REACTION: Update immediately if moving from 'No Content' OR if ID changed
+        const currentId = playlist?.id;
+        const newId = data.id;
+
+        if (isInitial || !playlist || currentId !== newId) {
           setPlaylist(data);
+          if (!playlist || currentId !== newId) setCurrentIndex(0);
+          pendingPlaylistRef.current = null; // Clear pending
         } else {
-          // Only stage a pending update if the playlist actually changed
-          // (different ID or different number of items = real change)
+          // Same playlist re-poll, stage silently for next transition
           pendingPlaylistRef.current = data;
         }
-      } else if (isInitial) {
+      } else if (isInitial || playlist) {
+        // If data is null but we had a playlist, it means we are now out of schedule
         setPlaylist(null);
       }
     } catch (err) {
@@ -364,7 +370,7 @@ export default function DisplayPlayerPage() {
             />
           ) : isVideo ? (
             <video
-              key={`${currentItem.id}-${currentIndex}`} // Unique key to force re-render
+              key={`${currentItem.id}-${mediaUrl}-${currentIndex}`} // Force re-render on any source change
               ref={videoRef}
               src={mediaUrl}
               className="w-full h-full object-contain"
