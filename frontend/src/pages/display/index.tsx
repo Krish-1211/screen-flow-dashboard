@@ -141,7 +141,6 @@ export default function DisplayPlayerPage() {
     return () => clearInterval(interval);
   }, [deviceId]);
 
-  // ── Playlist loading (only stage pending if content actually changed) ──
   const loadPlaylist = useCallback(async (isInitial = false) => {
     if (!deviceId) return;
     try {
@@ -164,45 +163,51 @@ export default function DisplayPlayerPage() {
         if (isInitial || !playlist || currentId !== newId) {
           setPlaylist(data);
           if (!playlist || currentId !== newId) setCurrentIndex(0);
-          pendingPlaylistRef.current = null; // Clear pending
+          pendingPlaylistRef.current = null;
         } else {
-          // Same playlist re-poll, stage silently for next transition
           pendingPlaylistRef.current = data;
         }
       } else if (isInitial || playlist) {
-        // If data is null but we had a playlist, it means we are now out of schedule
         setPlaylist(null);
       }
+      
+      // Update heartbeat
+      localStorage.setItem(`sf_heartbeat_${deviceId}`, Date.now().toString());
     } catch (err) {
-      console.error("Failed to load playlist, using offline storage", err);
-      const offline = localStorage.getItem(`offline-playlist-${deviceId}`);
-      if (offline) {
-        const pl = JSON.parse(offline);
-        if (isInitial) setPlaylist(pl);
-        else pendingPlaylistRef.current = pl;
-      }
+      console.warn("Poll failed, retry in 5s", err);
+      setTimeout(() => loadPlaylist(false), 5000);
     } finally {
       if (isInitial) setLoading(false);
     }
-  }, [deviceId]);
+  }, [deviceId, playlist]);
 
-  // ── Poll interval & online/offline (unchanged structure) ──
   useEffect(() => {
     if (!deviceId) {
       setLoading(false);
       return;
     }
     loadPlaylist(true);
-    const pollInterval = setInterval(() => loadPlaylist(false), 10000);
+    
+    // Requirement 1: 15s poll
+    const pollInterval = setInterval(() => loadPlaylist(false), 15000);
+
+    // Requirement 4: 60s Watchdog
+    const watchdog = setInterval(() => {
+      const lastPing = parseInt(localStorage.getItem(`sf_heartbeat_${deviceId}`) || "0");
+      if (Date.now() - lastPing > 60000) {
+        console.warn("[watchdog] Unresponsive >60s. Reloading.");
+        window.location.reload();
+      }
+    }, 15000);
 
     const handleOnline = () => setConnected(true);
     const handleOffline = () => setConnected(false);
-
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
     return () => {
       clearInterval(pollInterval);
+      clearInterval(watchdog);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };

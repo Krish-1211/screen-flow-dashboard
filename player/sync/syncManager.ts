@@ -14,9 +14,9 @@ export class SyncManager {
   private onUpdate: (newPlaylist: Playlist) => void;
   private onStatus: (status: SyncStatus) => void;
   private onSyncActivity: (isSyncing: boolean) => void;
+  public lastSyncTime: number = Date.now();
   private isRunning = false;
   private loopPromise: Promise<void> | null = null;
-  private ticksSinceFullFetch = 0;
 
   constructor(
     deviceId: string,
@@ -35,24 +35,8 @@ export class SyncManager {
   public bootstrapFromLocal() {
     const cached = playlistStore.get();
     if (!cached) return null;
-    versionManager.set(cached.version);
     this.onUpdate(cached.playlist);
     return cached;
-  }
-
-  public async forceFullSync() {
-    try {
-      console.info('[player] sync full fetch start');
-      const playlist = await this.fetchPlayerPlaylist();
-      this.applyPlaylist(playlist);
-      this.onStatus({ online: true, stale: false, lastSuccessAt: Date.now() });
-      console.info('[player] sync full fetch success');
-    } catch (e) {
-      const cached = playlistStore.get();
-      const stale = this.isStale(cached?.timestamp ?? null);
-      this.onStatus({ online: false, stale, lastSuccessAt: cached?.timestamp ?? null });
-      console.warn('Initial sync failed, continuing offline', e);
-    }
   }
 
   public startSyncLoop() {
@@ -67,9 +51,16 @@ export class SyncManager {
 
   private async runLoop() {
     while (this.isRunning) {
-      await this.checkAndSync();
-      // Increase polling frequency for responsive scheduling (30 seconds)
-      await this.sleep(30 * 1000);
+      try {
+        await this.checkAndSync();
+        this.lastSyncTime = Date.now(); // Healthy
+        // Requirement 1: 15s polling
+        await this.sleep(15000); 
+      } catch (e) {
+        console.warn('[player] sync failed, retry in 5s...', e);
+        // Requirement 3: 5s retry
+        await this.sleep(5000);
+      }
     }
     this.loopPromise = null;
   }
@@ -77,30 +68,14 @@ export class SyncManager {
   private async checkAndSync() {
     this.onSyncActivity(true);
     try {
-      const serverVersion = await this.fetchVersion();
-      const hasEtagVersion = !serverVersion.startsWith('unknown-');
-      const shouldFallbackFetch = this.ticksSinceFullFetch >= 1;
-      const versionChanged = hasEtagVersion
-        ? versionManager.getETag() !== serverVersion
-        : !versionManager.isUpToDate(serverVersion);
-      const shouldFetch = versionChanged || shouldFallbackFetch;
-      if (shouldFetch) {
-        const serverPlaylist = await this.fetchPlayerPlaylist();
-        this.applyPlaylist(serverPlaylist);
-        if (hasEtagVersion) {
-          versionManager.setETag(serverVersion);
-        }
-        this.ticksSinceFullFetch = 0;
-      } else {
-        this.ticksSinceFullFetch += 1;
-      }
-
+      const serverPlaylist = await this.fetchPlayerPlaylist();
+      this.applyPlaylist(serverPlaylist);
       this.onStatus({ online: true, stale: false, lastSuccessAt: Date.now() });
     } catch (e) {
       const cached = playlistStore.get();
       const stale = this.isStale(cached?.timestamp ?? null);
       this.onStatus({ online: false, stale, lastSuccessAt: cached?.timestamp ?? null });
-      console.warn('Sync failed, staying on local playlist', e);
+      throw e; // Bubble to loop for retry
     } finally {
       this.onSyncActivity(false);
     }
@@ -108,10 +83,7 @@ export class SyncManager {
 
   private getLocalTimeParams(): string {
     const now = new Date();
-    // HH:mm:ss
     const time = now.toTimeString().split(' ')[0];
-    // JS getDay(): 0=Sun, 1=Mon... 6=Sat
-    // Our logic: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
     const jsDay = now.getDay();
     const localDay = jsDay === 0 ? 6 : jsDay - 1;
     return `&local_time=${time}&local_day=${localDay}`;
@@ -119,40 +91,32 @@ export class SyncManager {
 
   private async fetchPlayerPlaylist(): Promise<Playlist> {
     const params = this.getLocalTimeParams();
-    const response = await axios.get(`${this.apiBaseUrl}/screens/player?device_id=${this.deviceId}${params}`);
+    const response = await axios.get(`${this.apiBaseUrl}/screens/player?device_id=${this.deviceId}${params}`, {
+      timeout: 10000 
+    });
     return response.data as Playlist;
-  }
-
-  private async fetchVersion(): Promise<string> {
-    const params = this.getLocalTimeParams();
-    const response = await axios.head(`${this.apiBaseUrl}/screens/player?device_id=${this.deviceId}${params}`);
-    const etag = response.headers.etag as string | undefined;
-    if (etag) {
-      return etag;
-    }
-    return `unknown-${Date.now()}`;
   }
 
   private applyPlaylist(playlist: Playlist): void {
     if (!playlist || !Array.isArray(playlist.items)) return;
 
     const cached = playlistStore.get();
-    const hasItemsChanged = !cached || JSON.stringify(playlist.items) !== JSON.stringify(cached.playlist.items);
+    const cachedItems = cached?.playlist.items;
+    
+    // Compare Content + ID
+    const hasItemsChanged = !cachedItems || JSON.stringify(playlist.items) !== JSON.stringify(cachedItems);
     const hasIdChanged = !cached || String(playlist.id) !== String(cached.playlist.id);
 
     if (hasItemsChanged || hasIdChanged) {
       playlistStore.save(playlist);
-      versionManager.set(playlist.updatedAt || new Date().toISOString());
-      console.info(`[player] sync: playlist update applied (IdChanged=${hasIdChanged})`);
+      console.info(`[player] sync: playlist update (Id=${playlist.id}, Changed=${hasItemsChanged})`);
       this.onUpdate(playlist);
-    } else {
-      console.info('[player] playlist unchanged, skipping update');
     }
   }
 
   private isStale(lastSuccessAt: number | null): boolean {
     if (!lastSuccessAt) return true;
-    return Date.now() - lastSuccessAt > 3 * 60 * 60 * 1000;
+    return Date.now() - lastSuccessAt > 60 * 60 * 1000;
   }
 
   private sleep(ms: number): Promise<void> {

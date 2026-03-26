@@ -255,19 +255,32 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     }
 
     engine.startPlayback();
-    void sync.forceFullSync();
+    // sync.startSyncLoop() handles initial fetch and retries automatically
     sync.startSyncLoop();
 
     return () => {
-      stateMachine.transition('STOP');
+      console.info("[player] Cleaning up...");
       unsubscribeState();
       engine.stopPlaybackLoop();
       sync.stop();
-      if (playbackErrorTimeoutRef.current) clearTimeout(playbackErrorTimeoutRef.current);
-      if (noContentRetryTimeoutRef.current) clearTimeout(noContentRetryTimeoutRef.current);
-      if (watchdogTimeoutRef.current) clearTimeout(watchdogTimeoutRef.current);
     };
   }, [deviceId, apiBaseUrl]);
+
+  // Requirement 4: Heartbeat Watchdog
+  useEffect(() => {
+    const watchdog = setInterval(() => {
+      if (syncRef.current) {
+        const lastSync = syncRef.current.lastSyncTime;
+        const now = Date.now();
+        // 60s without a successful poll loop completion = force reload
+        if (now - lastSync > 60 * 1000) {
+          console.warn("[watchdog] Unresponsive for >60s. Forcing repair reload.");
+          window.location.reload();
+        }
+      }
+    }, 15000);
+    return () => clearInterval(watchdog);
+  }, []);
 
   // Handle video playback when layer changes
   useEffect(() => {
@@ -320,7 +333,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     noContentRetryTimeoutRef.current = setTimeout(() => {
       console.info('[player] no content, retrying sync');
       stateMachineRef.current.transition('STARTUP');
-      void syncRef.current?.forceFullSync();
+      // Sync loop is always running and handles retries
     }, 30000);
 
     return () => {
@@ -408,26 +421,33 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     return (
       <div 
         key={layer}
-        className="fade-item"
-        style={{ opacity: isVisible ? 1 : 0, zIndex: isVisible ? 2 : 1 }}
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        style={{ 
+          opacity: isVisible ? 1 : 0, 
+          zIndex: isVisible ? 10 : 1,
+          transition: 'opacity 0.6s ease-in-out',
+          willChange: 'opacity'
+        }}
       >
         {isGap ? (
           <div className="w-full h-full bg-black" />
         ) : isVideo ? (
           <video
-            key={`${layer}-${data.item.id}-${playbackCycle}`}
+            // Requirement 2: Key-based remounting on source change
+            key={`${layer}-${data.url}-${data.item.id}`}
             ref={layer === 'A' ? videoRefA : videoRefB}
             src={data.url}
             className="w-full h-full object-contain"
             autoPlay
             playsInline
+            muted={layer !== activeLayer} // Only unmute active layer
             preload="auto"
             onEnded={layer === activeLayer ? handleVideoEnded : undefined}
             onError={layer === activeLayer ? handleMediaError : undefined}
           />
         ) : (
           <img
-            key={`${layer}-${data.item.id}-${playbackCycle}`}
+            key={`${layer}-${data.url}-${data.item.id}`}
             src={data.url}
             className="w-full h-full object-contain"
             alt="Content"
