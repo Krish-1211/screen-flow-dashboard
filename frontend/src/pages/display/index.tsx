@@ -155,29 +155,31 @@ export default function DisplayPlayerPage() {
       
       if (data && data.items) {
         localStorage.setItem(`offline-playlist-${deviceId}`, JSON.stringify(data));
-
-        // PROACTIVE REACTION: Update immediately if moving from 'No Content' OR if ID changed
-        const currentId = playlist?.id;
-        const newId = data.id;
-
-        if (isInitial || !playlist || currentId !== newId) {
-          setPlaylist(data);
-          if (!playlist || currentId !== newId) setCurrentIndex(0);
-          pendingPlaylistRef.current = null;
-        } else {
-          pendingPlaylistRef.current = data;
-        }
-      } else if (isInitial || playlist) {
+        setPlaylist(data);
+        // Reset index if it's a new playlist
+        if (!playlist || playlist.id !== data.id) setCurrentIndex(0);
+        pendingPlaylistRef.current = null;
+      } else {
         setPlaylist(null);
       }
       
-      // Update heartbeat
+      // Mark successful sync for watchdog
       localStorage.setItem(`sf_heartbeat_${deviceId}`, Date.now().toString());
     } catch (err) {
-      console.warn("Poll failed, retry in 5s", err);
+      console.warn("[player] Sync failed, attempting fallback...", err);
+      
+      // Requirement 3: Fallback system
+      const cached = localStorage.getItem(`offline-playlist-${deviceId}`);
+      if (cached && !playlist) {
+        console.info("[player] Using cached playlist fallback");
+        setPlaylist(JSON.parse(cached));
+      }
+
+      // Requirement 3: 5s retry on failure
       setTimeout(() => loadPlaylist(false), 5000);
     } finally {
-      if (isInitial) setLoading(false);
+      // Requirement 1: Life saving line - ALWAYS resolve loading
+      setLoading(false); 
     }
   }, [deviceId, playlist]);
 
@@ -186,16 +188,18 @@ export default function DisplayPlayerPage() {
       setLoading(false);
       return;
     }
+    
+    // Initial fetch
     loadPlaylist(true);
     
-    // Requirement 1: 15s poll
+    // Polling @ 15s
     const pollInterval = setInterval(() => loadPlaylist(false), 15000);
 
-    // Requirement 4: 60s Watchdog
+    // Watchdog @ 60s
     const watchdog = setInterval(() => {
       const lastPing = parseInt(localStorage.getItem(`sf_heartbeat_${deviceId}`) || "0");
       if (Date.now() - lastPing > 60000) {
-        console.warn("[watchdog] Unresponsive >60s. Reloading.");
+        console.warn("[watchdog] System hang detected. Forcing repair.");
         window.location.reload();
       }
     }, 15000);

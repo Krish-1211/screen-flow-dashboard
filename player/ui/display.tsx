@@ -263,6 +263,8 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
       unsubscribeState();
       engine.stopPlaybackLoop();
       sync.stop();
+      if (playbackErrorTimeoutRef.current) clearTimeout(playbackErrorTimeoutRef.current);
+      if (noContentRetryTimeoutRef.current) clearTimeout(noContentRetryTimeoutRef.current);
     };
   }, [deviceId, apiBaseUrl]);
 
@@ -273,14 +275,26 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
         const lastSync = syncRef.current.lastSyncTime;
         const now = Date.now();
         // 60s without a successful poll loop completion = force reload
-        if (now - lastSync > 60 * 1000) {
-          console.warn("[watchdog] Unresponsive for >60s. Forcing repair reload.");
+        if (now - lastSync > 60000) {
+          console.warn("[watchdog] System hang detected. Forcing repair reload.");
           window.location.reload();
         }
       }
     }, 15000);
     return () => clearInterval(watchdog);
   }, []);
+
+  // Debug Logs (Requirement 3)
+  useEffect(() => {
+    console.info("[player] STATE UPDATE:", {
+      state,
+      playlistItems: playlistItems.length,
+      itemA_Active: !!itemA.item,
+      itemB_Active: !!itemB.item,
+      activeLayer,
+      online: !isOffline
+    });
+  }, [state, playlistItems, activeLayer, isOffline]);
 
   // Handle video playback when layer changes
   useEffect(() => {
@@ -389,7 +403,8 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     };
   }, []);
 
-  if (state === PlayerState.LOADING) {
+  // Requirement 2: Never block UI on loading if we have content
+  if (state === PlayerState.LOADING && !itemA.item && !itemB.item) {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white"></div>
