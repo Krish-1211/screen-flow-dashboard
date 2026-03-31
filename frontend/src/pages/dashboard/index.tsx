@@ -10,9 +10,9 @@ import { auditApi, AuditLogItem } from "@/services/api/audit";
 import { formatDistanceToNow } from "date-fns";
 
 export default function DashboardPage() {
-  const { data: screens = [] } = useQuery({ queryKey: ['screens'], queryFn: screensApi.getAll });
-  const { data: playlists = [] } = useQuery({ queryKey: ['playlists'], queryFn: playlistsApi.getAll });
-  const { data: media = [] } = useQuery({ queryKey: ['media'], queryFn: mediaApi.getAll });
+  const { data: screens = [] } = useQuery({ queryKey: ['screens'], queryFn: () => screensApi.getAll() });
+  const { data: playlists = [] } = useQuery({ queryKey: ['playlists'], queryFn: () => playlistsApi.getAll() });
+  const { data: media = [] } = useQuery({ queryKey: ['media'], queryFn: () => mediaApi.getAll() });
   const { data: auditLogs = [] } = useQuery({ queryKey: ['audit'], queryFn: () => auditApi.getAll() });
 
   const getActivityDetails = (log: AuditLogItem) => {
