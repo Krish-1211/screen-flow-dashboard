@@ -145,7 +145,6 @@ export default function DisplayPlayerPage() {
   const evaluateActivePlaylist = useCallback((ctx: PlayerContext): Playlist | null => {
     const now = new Date();
     const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
-    const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
     const activeSchedules = ctx.schedules.filter(s => {
@@ -155,7 +154,6 @@ export default function DisplayPlayerPage() {
       const start = sh * 60 + sm;
       const end = eh * 60 + em;
       
-      // Midnight crossing support
       if (end < start) {
         return currentMinutes >= start || currentMinutes < end;
       }
@@ -164,7 +162,6 @@ export default function DisplayPlayerPage() {
 
     let targetPlaylistId: string | null = null;
     if (activeSchedules.length > 0) {
-      // Latest start wins
       activeSchedules.sort((a, b) => b.startTime.localeCompare(a.startTime));
       targetPlaylistId = String(activeSchedules[0].playlistId);
     } else {
@@ -191,14 +188,15 @@ export default function DisplayPlayerPage() {
         setContext(data);
         const activePl = evaluateActivePlaylist(data);
 
-        // Check for playlist change
-        if (activePl?.id !== playlist?.id) {
-            console.info(`[player] sync flip: ${playlist?.id} -> ${activePl?.id}`);
-            setPlaylist(activePl);
-            setCurrentIndex(0);
-        } else if (activePl) {
-            setPlaylist(activePl);
-        }
+        // Functional updates to avoid dependency on 'playlist'
+        setPlaylist(currentPl => {
+            if (activePl?.id !== currentPl?.id) {
+                console.info(`[player] sync flip: ${currentPl?.id} -> ${activePl?.id}`);
+                setCurrentIndex(0);
+                return activePl;
+            }
+            return activePl; // Update items if same ID
+        });
       } else {
         setPlaylist(null);
       }
@@ -210,7 +208,7 @@ export default function DisplayPlayerPage() {
     } finally {
       setLoading(false); 
     }
-  }, [deviceId, playlist, evaluateActivePlaylist]);
+  }, [deviceId, evaluateActivePlaylist]);
 
   useEffect(() => {
     if (!deviceId) {
@@ -220,14 +218,11 @@ export default function DisplayPlayerPage() {
     
     loadPlaylist(true);
     
-    // Polling @ 15s (Silent)
     const pollInterval = setInterval(() => loadPlaylist(false), 15000);
 
-    // Watchdog @ 15s
     const watchdog = setInterval(() => {
       const lastPing = parseInt(localStorage.getItem(`sf_heartbeat_${deviceId}`) || "0");
       if (Date.now() - lastPing > 60000) {
-        console.warn("[watchdog] Hang detected! Forcing repair.");
         window.location.reload();
       }
     }, 15000);
@@ -249,51 +244,52 @@ export default function DisplayPlayerPage() {
   useEffect(() => {
     if (!context) return;
     
-    const checkNow = () => {
+    const interval = setInterval(() => {
         const activePl = evaluateActivePlaylist(context);
-        if (activePl?.id !== playlist?.id) {
-          console.info(`[player] local schedule flip: ${playlist?.id} -> ${activePl?.id}`);
-          setPlaylist(activePl);
-          setCurrentIndex(0);
-        }
-    };
+        setPlaylist(currentPl => {
+            if (activePl?.id !== currentPl?.id) {
+                console.info(`[player] local schedule flip: ${currentPl?.id} -> ${activePl?.id}`);
+                setCurrentIndex(0);
+                return activePl;
+            }
+            return currentPl;
+        });
+    }, 5000);
 
-    const interval = setInterval(checkNow, 5000);
     return () => clearInterval(interval);
-  }, [context, playlist, evaluateActivePlaylist]);
+  }, [context, evaluateActivePlaylist]);
 
   // ── Advance to next item with crossfade ──
   const advanceMedia = useCallback(() => {
     setMediaError(false);
     isVideoPlayingRef.current = false;
-
-    // Fade out current item
     setFadeState('out');
 
     setTimeout(() => {
-      // Check if a genuinely different playlist arrived from background poll
       const pending = pendingPlaylistRef.current;
       if (pending) {
         pendingPlaylistRef.current = null;
-        const currentId = playlist?.id;
-        const pendingId = pending.id;
-        
-        if (pendingId !== currentId) {
-          setPlaylist(pending);
-          setCurrentIndex(0);
-        } else {
-          setPlaylist(pending);
-          setCurrentIndex((prev) => (prev + 1) % (pending.items?.length || 1));
-        }
-      } else if (playlist?.items?.length) {
-        setCurrentIndex((prev) => (prev + 1) % playlist.items.length);
+        setPlaylist(currentPl => {
+            if (pending.id !== currentPl?.id) {
+                setCurrentIndex(0);
+                return pending;
+            }
+            setCurrentIndex((prev) => (prev + 1) % (pending.items?.length || 1));
+            return pending;
+        });
+      } else {
+        setPlaylist(currentPl => {
+            if (currentPl?.items?.length) {
+                setCurrentIndex((prev) => (prev + 1) % currentPl.items.length);
+            }
+            return currentPl;
+        });
       }
-      // Fade in next item
       setFadeState('in');
     }, 200);
-  }, [playlist]);
+  }, []);
 
-  // ── Timer logic: only for images and youtube, NOT for videos ──
+  // ── Timer logic ──
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (!playlist?.items?.length) return;
@@ -316,13 +312,11 @@ export default function DisplayPlayerPage() {
     };
   }, [currentIndex, playlist, advanceMedia, preloadNextItem]);
 
-  // ── Error handler ──
   const handleMediaError = () => {
     setMediaError(true);
     setTimeout(advanceMedia, 5000);
   };
 
-  // ── Mute toggle (applies to active video element live) ──
   const toggleMute = useCallback((e: React.MouseEvent) => {
     e.stopPropagation(); 
     setMuted(prev => {
@@ -342,7 +336,7 @@ export default function DisplayPlayerPage() {
 
   if (!deviceId) {
     return (
-      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white">
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-6">
         <AlertTriangle className="w-16 h-16 text-red-500 mb-4" />
         <h1 className="text-3xl font-bold">Missing Device ID</h1>
         <p className="mt-2 text-gray-400">Please use the full URL from your dashboard.</p>
