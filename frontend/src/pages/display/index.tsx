@@ -390,11 +390,20 @@ export default function DisplayPlayerPage() {
   }
 
   if (!playlist || !playlist.items || playlist.items.length === 0) {
+    const now = new Date();
+    const localTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-6 text-center">
         <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
         <h1 className="text-2xl font-bold">No Content Assigned</h1>
         <p className="mt-2 text-gray-400 max-w-md">Please assign a playlist to this screen from the dashboard to begin playback.</p>
+        
+        <div className="mt-8 flex flex-col items-center gap-2">
+          <span className="text-4xl font-bold font-mono tracking-tighter text-gray-100">{localTimeStr}</span>
+          <span className="text-[10px] text-gray-600 uppercase tracking-widest">Device Local Time</span>
+        </div>
+
         <div className="mt-12 text-[10px] text-gray-600 font-mono tracking-widest uppercase py-1 px-3 border border-gray-800 rounded">
           DEVICE ID: {deviceId}
         </div>
