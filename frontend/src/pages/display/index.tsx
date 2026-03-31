@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { WifiOff, AlertTriangle, Volume2, VolumeX } from "lucide-react";
 import { screensApi } from "@/services/api/screens";
-import type { Playlist } from "@/types";
+import type { Playlist, PlayerContext, Schedule } from "@/types";
 
 export default function DisplayPlayerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,6 +68,7 @@ export default function DisplayPlayerPage() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [connected, setConnected] = useState(navigator.onLine);
+  const [context, setContext] = useState<PlayerContext | null>(null);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(true);
   const [mediaError, setMediaError] = useState(false);
@@ -141,7 +142,33 @@ export default function DisplayPlayerPage() {
     return () => clearInterval(interval);
   }, [deviceId]);
 
-  const currentPlaylistIdRef = useRef<string | number | undefined>(undefined);
+  const currentContextIdRef = useRef<string | null>(null);
+
+  const evaluateActivePlaylist = useCallback((ctx: PlayerContext): Playlist | null => {
+    const now = new Date();
+    const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const activeSchedules = ctx.schedules.filter(s => {
+      if (!s.days.includes(currentDay)) return false;
+      const [sh, sm] = s.startTime.split(':').map(Number);
+      const [eh, em] = s.endTime.split(':').map(Number);
+      const start = sh * 60 + sm;
+      const end = eh * 60 + em;
+      if (end < start) return currentMinutes >= start || currentMinutes < end;
+      return currentMinutes >= start && currentMinutes < end;
+    });
+
+    let targetPlaylistId: string | null = null;
+    if (activeSchedules.length > 0) {
+      activeSchedules.sort((a, b) => b.startTime.localeCompare(a.startTime));
+      targetPlaylistId = String(activeSchedules[0].playlistId);
+    } else {
+      targetPlaylistId = String(ctx.screen.defaultPlaylistId);
+    }
+
+    return ctx.playlists.find(p => String(p.id) === targetPlaylistId) || null;
+  }, []);
 
   const loadPlaylist = useCallback(async (isInitial = false) => {
     if (!deviceId) return;
@@ -153,45 +180,29 @@ export default function DisplayPlayerPage() {
       const jsDay = now.getDay();
       const localDay = jsDay === 0 ? 6 : jsDay - 1;
       
-      const data = await screensApi.getPlayerConfig(deviceId, localTime, localDay);
+      const data: PlayerContext = await screensApi.getPlayerConfig(deviceId, localTime, localDay);
       
-      if (data && data.items) {
-        localStorage.setItem(`offline-playlist-${deviceId}`, JSON.stringify(data));
-        
-        // Use Ref to check for changes to avoid re-render loop
-        const newId = data.id;
-        const hasIdChanged = currentPlaylistIdRef.current !== newId;
+      if (data && data.playlists) {
+        setContext(data);
+        const activePl = evaluateActivePlaylist(data);
 
-        if (isInitial || hasIdChanged) {
-          console.info(`[player] sync: new playlist detected (${currentPlaylistIdRef.current} -> ${newId})`);
-          setPlaylist(data);
-          currentPlaylistIdRef.current = newId;
-          if (hasIdChanged) setCurrentIndex(0);
-          pendingPlaylistRef.current = null;
-        } else {
-          // Same schedule, just update content silently for next transition
-          pendingPlaylistRef.current = data;
+        // Check for playlist change
+        if (activePl?.id !== playlist?.id) {
+            setPlaylist(activePl);
+            setCurrentIndex(0);
+        } else if (activePl) {
+            // Keep items in sync if playlist ID is same but content changed
+            setPlaylist(activePl);
         }
       } else {
-        if (currentPlaylistIdRef.current !== undefined) {
-           setPlaylist(null);
-           currentPlaylistIdRef.current = undefined;
-        }
+        setPlaylist(null);
       }
       
       localStorage.setItem(`sf_heartbeat_${deviceId}`, Date.now().toString());
     } catch (err) {
       console.warn("[player] Sync failure, retrying 5s", err);
-      // Requirement 3: Fallback from cache
-      const cached = localStorage.getItem(`offline-playlist-${deviceId}`);
-      if (cached && currentPlaylistIdRef.current === undefined) {
-        const parsed = JSON.parse(cached);
-        setPlaylist(parsed);
-        currentPlaylistIdRef.current = parsed.id;
-      }
       setTimeout(() => loadPlaylist(false), 5000);
     } finally {
-      // Life saving resolution
       setLoading(false); 
     }
   }, [deviceId]); // REMOVED playlist dependency here

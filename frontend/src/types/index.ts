@@ -52,3 +52,19 @@ export interface Playlist {
     updatedAt?: string;
     version?: string;
 }
+export interface Schedule {
+  id: string;
+  name: string;
+  screenId: string;
+  playlistId: string;
+  startTime: string;
+  endTime: string;
+  days: number[];
+  active: boolean;
+}
+
+export interface PlayerContext {
+  screen: Screen & { defaultPlaylistId: string | null };
+  playlists: Playlist[];
+  schedules: Schedule[];
+}
