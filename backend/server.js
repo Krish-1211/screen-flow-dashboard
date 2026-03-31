@@ -543,6 +543,38 @@ app.post('/media/youtube', async (req, res) => {
     io.emit('media-updated');
     res.json(media);
 });
+app.put('/media/:id', async (req, res) => {
+    const { name, parent_id } = req.body;
+    const { id } = req.params;
+
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (parent_id !== undefined) updates.parent_id = parent_id === 'root' ? null : parent_id;
+
+    const { data: updated, error } = await supabase
+        .from('media')
+        .update(updates)
+        .eq('id', id)
+        .eq('client_id', CLIENT_ID)
+        .select()
+        .maybeSingle();
+
+    if (error) return res.status(500).json({ error });
+    if (!updated) return res.status(404).json({ error: "Media not found" });
+
+    // Update local JSON (legacy)
+    const db = readDB();
+    if (db.media) {
+        const idx = db.media.findIndex(m => m.id === id);
+        if (idx !== -1) {
+            db.media[idx] = { ...db.media[idx], ...updates };
+            writeDB(db);
+        }
+    }
+
+    io.emit('media-updated');
+    res.json(updated);
+});
 app.delete('/media/:id', async (req, res) => {
     const { id } = req.params;
 
