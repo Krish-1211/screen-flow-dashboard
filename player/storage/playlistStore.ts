@@ -1,15 +1,14 @@
-import type { Playlist } from '@/types';
+import type { PlayerContext } from '@/types';
 
-export interface PersistedPlaylist {
-  playlist: Playlist;
-  version: string;
+export interface PersistedContext {
+  context: PlayerContext;
   timestamp: number;
 }
 
-const STORAGE_KEY = 'sf_player_state';
+const STORAGE_KEY = 'sf_player_context';
 
-export const playlistStore = {
-  get: (): PersistedPlaylist | null => {
+export const contextStore = {
+  get: (): PersistedContext | null => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       return stored ? JSON.parse(stored) : null;
@@ -18,10 +17,9 @@ export const playlistStore = {
     }
   },
 
-  save: (playlist: Playlist) => {
-    const state: PersistedPlaylist = {
-      playlist,
-      version: playlist.updatedAt || new Date().toISOString(),
+  save: (context: PlayerContext) => {
+    const state: PersistedContext = {
+      context,
       timestamp: Date.now()
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));

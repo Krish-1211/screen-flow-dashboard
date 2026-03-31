@@ -757,11 +757,12 @@ app.delete('/schedules/:id', async (req, res) => {
     res.status(204).send();
 });
 
-// PLAYER Heartbeat & Playlist Discovery
+// PLAYER Heartbeat & Context Discovery
 app.get('/screens/player', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     const { device_id } = req.query;
 
+    // 1. Get the screen
     const { data: screen, error: screenError } = await supabase
         .from('screens')
         .select('*')
@@ -770,108 +771,87 @@ app.get('/screens/player', async (req, res) => {
         .maybeSingle();
     
     if (screenError || !screen) {
-        return res.json({ name: "Fallback", items: [] });
+        return res.status(404).json({ error: "Screen not found" });
     }
 
-    // --- SCHEDULER LOGIC ---
-    let activePlaylistId = screen.playlist_id;
-
-    const { data: schedules, error: schedError } = await supabase
+    // 2. Fetch all schedules for this screen
+    const { data: allSchedules, error: schedError } = await supabase
         .from('schedules')
         .select('*')
         .eq('client_id', CLIENT_ID);
 
-    if (!schedError && schedules && schedules.length > 0) {
-        // Use query params or fallback to server time
-        const now = new Date();
-        const serverTime = now.toTimeString().split(' ')[0]; // HH:mm:ss
-        const serverDay = now.getDay() === 0 ? 6 : now.getDay() - 1; // 0=Mon... 6=Sun
+    const relevantSchedules = (allSchedules || [])
+        .map(s => s.data)
+        .filter(s => String(s.screen_id) === String(screen.id) && s.active !== false);
 
-        const localTime = req.query.local_time || serverTime;
-        const localDay = req.query.local_day !== undefined ? parseInt(req.query.local_day) : serverDay;
-        const localSeconds = toSeconds(localTime);
-
-        // Find match
-        const activeSched = schedules.find(s => {
-            const d = s.data;
-            if (!d || d.active === false) return false;
-            if (String(d.screen_id) !== String(screen.id)) return false;
-            
-            // Support both days_of_week (array) and day_of_week (legacy/single)
-            const days = d.days_of_week || (d.day_of_week !== undefined ? [d.day_of_week] : []);
-            if (!days.includes(localDay)) return false;
-
-            const start = toSeconds(d.start_time);
-            const end = toSeconds(d.end_time);
-
-            // Debug verification logs
-            console.log(`[scheduler] evaluating ${screen.name}:`, {
-                localTime,
-                localSeconds,
-                start: d.start_time,
-                end: d.end_time,
-                startSeconds: start,
-                endSeconds: end
-            });
-
-            return localSeconds >= start && localSeconds < end;
-        });
-
-        if (activeSched) {
-            logger.info({ screen: screen.name, playlist_id: activeSched.data.playlist_id }, 'Active schedule found');
-            activePlaylistId = activeSched.data.playlist_id;
-        }
-    }
-
-    if (!activePlaylistId) {
-        return res.json({ name: "No Content", items: [] });
-    }
+    // 3. Fetch all playlists involved (default + scheduled)
+    const playlistIds = [
+        screen.playlist_id,
+        ...relevantSchedules.map(s => s.playlist_id)
+    ].filter(Boolean);
 
     const { data: playlists, error: plError } = await supabase
         .from('playlists')
         .select('*')
-        .eq('id', activePlaylistId)
+        .in('id', playlistIds)
         .eq('client_id', CLIENT_ID);
 
-    if (plError || !playlists || playlists.length === 0) return res.json({ name: "No Content", items: [] });
-    const playlist = playlists[0];
-
-    // Enrich items with Supabase media objects
-    const mediaIds = (playlist.items || []).map(i => i.mediaId);
-    const { data: mediaList, error } = await supabase
-        .from('media')
-        .select('*')
-        .in('id', mediaIds);
-
-    if (error) return res.status(500).json({ error });
-
-    const mediaMap = {};
-    mediaList.forEach(m => { mediaMap[m.id] = m; });
-
-    // Pre-declare and enrich items
-    let items = (playlist.items || []).map(item => ({
-        ...item,
-        media: mediaMap[item.mediaId]
-    }));
-
-    // Detect solo video and inject persistent gap
-    if (items.length === 1 && items[0].media?.type === 'video') {
-        const gapMedia = {
-            id: 'system-gap',
-            name: 'System Gap',
-            type: 'system_gap',
-            url: '/black-screen.svg'
-        };
-        items.push({
-            id: 'system-gap',
-            mediaId: 'system-gap',
-            order: 999,
-            duration: 1, // 1.0 second
-            media: gapMedia
-        });
+    if (plError || !playlists) {
+        return res.status(500).json({ error: "Failed to fetch playlists" });
     }
 
-    res.json({ ...playlist, items: items });
+    // 4. Enrich all playlists with media
+    const allMediaIds = [...new Set(playlists.flatMap(pl => (pl.items || []).map(i => i.mediaId)))];
+    const { data: mediaList, error: mError } = await supabase
+        .from('media')
+        .select('*')
+        .in('id', allMediaIds);
+
+    const mediaMap = {};
+    if (mediaList) {
+        mediaList.forEach(m => { mediaMap[m.id] = m; });
+    }
+
+    const enrichedPlaylists = playlists.map(pl => {
+        let items = (pl.items || []).map(item => ({
+            ...item,
+            media: mediaMap[item.mediaId]
+        }));
+
+        // Inject system gap for solo videos
+        if (items.length === 1 && items[0].media?.type === 'video') {
+            items.push({
+                id: 'system-gap',
+                mediaId: 'system-gap',
+                order: 999,
+                duration: 1,
+                media: {
+                    id: 'system-gap',
+                    name: 'System Gap',
+                    type: 'system_gap',
+                    url: '/black-screen.svg'
+                }
+            });
+        }
+        return { ...pl, items };
+    });
+
+    // 5. Return the payload
+    res.json({
+        screen: {
+            id: screen.id,
+            name: screen.name,
+            defaultPlaylistId: screen.playlist_id
+        },
+        playlists: enrichedPlaylists,
+        schedules: relevantSchedules.map(s => ({
+            id: s.id,
+            playlistId: s.playlist_id,
+            startTime: s.start_time,
+            endTime: s.end_time,
+            days: s.days_of_week || (s.day_of_week !== undefined ? [s.day_of_week] : [0,1,2,3,4,5,6])
+        }))
+    });
 });
 
 app.post('/screens/heartbeat', async (req, res) => {

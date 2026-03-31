@@ -1,8 +1,8 @@
-import type { PlaylistItem, Playlist } from '@/types';
+import type { PlaylistItem, Playlist, Schedule, PlayerContext } from '@/types';
 
 export class PlayerEngine {
   private playlist: PlaylistItem[] = [];
-  private playlistId: string | null = null;
+  private _playlistId: string | null = null;
   private nextPlaylist: PlaylistItem[] | null = null;
   private currentIndex = 0;
   private shouldRun = false;
@@ -12,40 +12,104 @@ export class PlayerEngine {
   private pendingTimeout: ReturnType<typeof setTimeout> | null = null;
   private onRender: (item: PlaylistItem) => void;
 
+  private schedules: Schedule[] = [];
+  private playlists: Map<string, Playlist> = new Map();
+  private defaultPlaylistId: string | null = null;
+  private currentContext: PlayerContext | null = null;
+  private scheduleCheckInterval: ReturnType<typeof setInterval> | null = null;
+
   constructor(onRender: (item: PlaylistItem) => void) {
     this.onRender = onRender;
+    this.startScheduleWatcher();
   }
 
-  public replacePlaylist(pl: Playlist) {
-    const newItems = [...(pl.items || [])];
-    const currentId = this.playlistId;
-    const newId = String(pl.id);
+  public updateContext(context: PlayerContext) {
+    this.currentContext = context;
+    this.schedules = context.schedules;
+    this.defaultPlaylistId = context.screen.defaultPlaylistId;
+    
+    const newPlaylistMap = new Map<string, Playlist>();
+    context.playlists.forEach(pl => newPlaylistMap.set(String(pl.id), pl));
+    this.playlists = newPlaylistMap;
 
-    // If ID changed (e.g., schedule flipped), we force an immediate swap.
-    if (currentId !== newId) {
-       console.info(`[player] schedule change detected (${currentId} -> ${newId}), breaking current content`);
-       this.playlist = newItems;
-       this.playlistId = newId;
-       this.nextPlaylist = null;
-       this.currentIndex = 0;
-       
-       // Force an immediate skip of the current item (especially if it was a long video or empty)
-       this.wakeLoop();
-       
-       // If nothing was playing, start immediately
-       if (!this.loopRunning && this.shouldRun) {
-         this.startPlayback();
-       }
-       return;
+    this.checkSchedule();
+  }
+
+  private startScheduleWatcher() {
+    if (this.scheduleCheckInterval) return;
+    this.scheduleCheckInterval = setInterval(() => this.checkSchedule(), 5000);
+  }
+
+  private checkSchedule() {
+    if (!this.currentContext) return;
+
+    const activePl = this.evaluateActivePlaylist();
+    if (!activePl) return;
+
+    this.applyPlaylistToEngine(activePl);
+  }
+
+  private evaluateActivePlaylist(): Playlist | null {
+    const now = new Date();
+    // Use the same day mapping as backend (0=Mon... 6=Sun)
+    const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const activeSchedules = this.schedules.filter(s => {
+      if (!s.days.includes(currentDay)) return false;
+
+      const [sh, sm] = s.startTime.split(':').map(Number);
+      const [eh, em] = s.endTime.split(':').map(Number);
+
+      const start = sh * 60 + sm;
+      const end = eh * 60 + em;
+
+      if (end < start) {
+        // Crosses midnight
+        return currentMinutes >= start || currentMinutes < end;
+      }
+
+      return currentMinutes >= start && currentMinutes < end;
+    });
+
+    let targetPlaylistId: string | null = null;
+
+    if (activeSchedules.length > 0) {
+      // Overlap handled: Latest start time wins
+      activeSchedules.sort((a, b) => b.startTime.localeCompare(a.startTime));
+      targetPlaylistId = String(activeSchedules[0].playlistId);
+    } else {
+      targetPlaylistId = String(this.defaultPlaylistId);
     }
 
-    // items change within the SAME playlist (admin updated current playlist items)
-    if (JSON.stringify(newItems) === JSON.stringify(this.playlist)) {
+    return this.playlists.get(targetPlaylistId) || null;
+  }
+
+  private applyPlaylistToEngine(pl: Playlist) {
+    const newItems = [...(pl.items || [])];
+    const currentId = this._playlistId;
+    const newId = String(pl.id);
+
+    if (currentId !== newId) {
+      console.info(`[player] schedule flip detected (${currentId} -> ${newId})`);
+      this.playlist = newItems;
+      this._playlistId = newId;
+      this.nextPlaylist = null;
+      this.currentIndex = 0;
+      
+      this.wakeLoop();
+      
+      if (!this.loopRunning && this.shouldRun) {
+        this.startPlayback();
+      }
       return;
     }
 
-    console.info('[player] same-playlist content update buffered for next transition');
-    this.nextPlaylist = newItems;
+    // items change within the SAME playlist
+    if (JSON.stringify(newItems) !== JSON.stringify(this.playlist)) {
+      console.info('[player] content update detected for current playlist');
+      this.nextPlaylist = newItems;
+    }
   }
 
   public startPlayback() {
@@ -114,6 +178,14 @@ export class PlayerEngine {
     this.loopToken += 1;
     this.clearPendingWait();
     this.wakeLoop();
+  }
+
+  public getPlaylistItems() {
+    return this.playlist;
+  }
+
+  public get playlistId() {
+    return this._playlistId;
   }
 
   public getStatus() {

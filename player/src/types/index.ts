@@ -22,3 +22,20 @@ export interface Playlist {
   updatedAt?: string;
   version?: string;
 }
+export interface Schedule {
+  id: string;
+  playlistId: string;
+  startTime: string; // HH:mm:ss
+  endTime: string;   // HH:mm:ss
+  days: number[];    // 0=Mon... 6=Sun
+}
+
+export interface PlayerContext {
+  screen: {
+    id: string;
+    name: string;
+    defaultPlaylistId: string;
+  };
+  playlists: Playlist[];
+  schedules: Schedule[];
+}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { PlayerEngine } from "../core/playerEngine";
 import { SyncManager, type SyncStatus } from "../sync/syncManager";
 import { PlayerState, PlayerStateMachine } from "../core/stateMachine";
-import type { PlaylistItem, Playlist } from "@/types";
+import type { PlaylistItem, Playlist, PlayerContext } from "@/types";
 import { mediaCache } from "../storage/mediaCache";
 
 interface PlayerProps {
@@ -212,8 +212,11 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
         }
         // Even if not a video, increment cycle for potential UI needs
         setPlaybackCycle(prev => prev + 1);
+        setPlaylistItems(engine.getPlaylistItems());
         return;
       }
+
+      setPlaylistItems(engine.getPlaylistItems());
 
       setActiveLayer((current) => {
         const next = current === 'A' ? 'B' : 'A';
@@ -235,9 +238,8 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     const sync = new SyncManager(
       deviceId,
       apiBaseUrl,
-      (newPl: Playlist) => {
-        setPlaylistItems(newPl.items || []);
-        engine.replacePlaylist(newPl);
+      (context: PlayerContext) => {
+        engine.updateContext(context);
         stateMachine.transition('PLAYLIST_READY');
       },
       handleSyncStatus,
@@ -248,9 +250,8 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     syncRef.current = sync;
 
     const cached = sync.bootstrapFromLocal();
-    if (cached?.playlist?.items) {
-      setPlaylistItems(cached.playlist.items);
-      engine.replacePlaylist(cached.playlist);
+    if (cached?.context) {
+      engine.updateContext(cached.context);
       stateMachine.transition('PLAYLIST_READY');
     }
 
