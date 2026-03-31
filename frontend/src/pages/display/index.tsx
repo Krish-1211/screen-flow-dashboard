@@ -142,11 +142,10 @@ export default function DisplayPlayerPage() {
     return () => clearInterval(interval);
   }, [deviceId]);
 
-  const currentContextIdRef = useRef<string | null>(null);
-
   const evaluateActivePlaylist = useCallback((ctx: PlayerContext): Playlist | null => {
     const now = new Date();
     const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
+    const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
     const activeSchedules = ctx.schedules.filter(s => {
@@ -155,18 +154,24 @@ export default function DisplayPlayerPage() {
       const [eh, em] = s.endTime.split(':').map(Number);
       const start = sh * 60 + sm;
       const end = eh * 60 + em;
-      if (end < start) return currentMinutes >= start || currentMinutes < end;
+      
+      // Midnight crossing support
+      if (end < start) {
+        return currentMinutes >= start || currentMinutes < end;
+      }
       return currentMinutes >= start && currentMinutes < end;
     });
 
     let targetPlaylistId: string | null = null;
     if (activeSchedules.length > 0) {
+      // Latest start wins
       activeSchedules.sort((a, b) => b.startTime.localeCompare(a.startTime));
       targetPlaylistId = String(activeSchedules[0].playlistId);
     } else {
-      targetPlaylistId = String(ctx.screen.defaultPlaylistId);
+      targetPlaylistId = ctx.screen.defaultPlaylistId ? String(ctx.screen.defaultPlaylistId) : null;
     }
 
+    if (!targetPlaylistId || targetPlaylistId === "none") return null;
     return ctx.playlists.find(p => String(p.id) === targetPlaylistId) || null;
   }, []);
 
@@ -188,10 +193,10 @@ export default function DisplayPlayerPage() {
 
         // Check for playlist change
         if (activePl?.id !== playlist?.id) {
+            console.info(`[player] sync flip: ${playlist?.id} -> ${activePl?.id}`);
             setPlaylist(activePl);
             setCurrentIndex(0);
         } else if (activePl) {
-            // Keep items in sync if playlist ID is same but content changed
             setPlaylist(activePl);
         }
       } else {
@@ -205,7 +210,7 @@ export default function DisplayPlayerPage() {
     } finally {
       setLoading(false); 
     }
-  }, [deviceId]); // REMOVED playlist dependency here
+  }, [deviceId, playlist, evaluateActivePlaylist]);
 
   useEffect(() => {
     if (!deviceId) {
@@ -213,13 +218,12 @@ export default function DisplayPlayerPage() {
       return;
     }
     
-    // Initial fetch
     loadPlaylist(true);
     
     // Polling @ 15s (Silent)
     const pollInterval = setInterval(() => loadPlaylist(false), 15000);
 
-    // Watchdog @ 60s
+    // Watchdog @ 15s
     const watchdog = setInterval(() => {
       const lastPing = parseInt(localStorage.getItem(`sf_heartbeat_${deviceId}`) || "0");
       if (Date.now() - lastPing > 60000) {
@@ -241,6 +245,23 @@ export default function DisplayPlayerPage() {
     };
   }, [loadPlaylist, deviceId]);
 
+  // ── Local Schedule Watcher (Watches context & clock) ──
+  useEffect(() => {
+    if (!context) return;
+    
+    const checkNow = () => {
+        const activePl = evaluateActivePlaylist(context);
+        if (activePl?.id !== playlist?.id) {
+          console.info(`[player] local schedule flip: ${playlist?.id} -> ${activePl?.id}`);
+          setPlaylist(activePl);
+          setCurrentIndex(0);
+        }
+    };
+
+    const interval = setInterval(checkNow, 5000);
+    return () => clearInterval(interval);
+  }, [context, playlist, evaluateActivePlaylist]);
+
   // ── Advance to next item with crossfade ──
   const advanceMedia = useCallback(() => {
     setMediaError(false);
@@ -254,9 +275,6 @@ export default function DisplayPlayerPage() {
       const pending = pendingPlaylistRef.current;
       if (pending) {
         pendingPlaylistRef.current = null;
-
-        // Only reset to index 0 if this is a DIFFERENT playlist
-        // (different ID = schedule changed or admin swapped playlists)
         const currentId = playlist?.id;
         const pendingId = pending.id;
         
@@ -264,7 +282,6 @@ export default function DisplayPlayerPage() {
           setPlaylist(pending);
           setCurrentIndex(0);
         } else {
-          // Same playlist re-fetched — just update data silently and advance
           setPlaylist(pending);
           setCurrentIndex((prev) => (prev + 1) % (pending.items?.length || 1));
         }
@@ -285,19 +302,13 @@ export default function DisplayPlayerPage() {
     const mediaType = currentItem?.media?.type;
 
     if (mediaType === 'video') {
-      // Videos advance via onEnded — no timer needed
       isVideoPlayingRef.current = true;
-      // Preload the next item while this video plays
       preloadNextItem(playlist, currentIndex);
       return;
     }
 
-    // Images & YouTube use duration-based timer
     const duration = currentItem.duration || 10;
-    
-    // Preload next item during this item's display
     preloadNextItem(playlist, currentIndex);
-
     timerRef.current = setTimeout(advanceMedia, duration * 1000);
 
     return () => {
@@ -313,7 +324,7 @@ export default function DisplayPlayerPage() {
 
   // ── Mute toggle (applies to active video element live) ──
   const toggleMute = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation(); // Don't trigger fullscreen
+    e.stopPropagation(); 
     setMuted(prev => {
       const next = !prev;
       if (videoRef.current) videoRef.current.muted = next;
@@ -321,7 +332,6 @@ export default function DisplayPlayerPage() {
     });
   }, []);
 
-  // ── Early returns for loading / error states (unchanged) ──
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
@@ -340,7 +350,7 @@ export default function DisplayPlayerPage() {
     );
   }
 
-  if (!playlist || playlist.items.length === 0) {
+  if (!playlist || !playlist.items || playlist.items.length === 0) {
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-6 text-center">
         <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
@@ -403,7 +413,7 @@ export default function DisplayPlayerPage() {
             />
           ) : isVideo ? (
             <video
-              key={`${currentItem.id}-${mediaUrl}-${currentIndex}`} // Force re-render on any source change
+              key={`${currentItem.id}-${mediaUrl}-${currentIndex}`} 
               ref={videoRef}
               src={mediaUrl}
               className="w-full h-full object-contain"
@@ -426,14 +436,11 @@ export default function DisplayPlayerPage() {
         </div>
       )}
 
-      {/* Mute / Unmute Toggle */}
       {(isVideo || isYoutube) && !mediaError && (
         <button
           onClick={toggleMute}
           className="absolute bottom-4 right-4 z-50 bg-black/50 backdrop-blur-sm rounded-full p-2.5 
-                     text-white/70 hover:text-white hover:bg-black/70 transition-all duration-200
-                     opacity-0 hover:opacity-100 focus:opacity-100"
-          style={{ opacity: undefined }} // Let CSS handle it, show on hover via group
+                     text-white/70 hover:text-white hover:bg-black/70 transition-all duration-200"
           title={muted ? "Unmute" : "Mute"}
         >
           {muted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
