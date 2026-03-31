@@ -1,5 +1,8 @@
-import { useState } from "react";
-import { Upload, Trash2, Image as ImageIcon, Film, RefreshCw, Youtube, Pencil, Edit3 } from "lucide-react";
+import { useState, useRef } from "react";
+import { 
+  Upload, Trash2, Image as ImageIcon, Film, RefreshCw, Youtube, 
+  Pencil, Folder, FolderPlus, ChevronRight, Home
+} from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,12 +16,23 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useRef } from "react";
+import { cn } from "@/lib/utils";
+
+interface Breadcrumb {
+  id: string | null;
+  name: string;
+}
 
 export default function MediaLibraryPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Navigation State
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([{ id: null, name: "Library" }]);
+  
+  // Dialog/Edit State
   const [uploadOpen, setUploadOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -26,49 +40,76 @@ export default function MediaLibraryPage() {
   const [editingMedia, setEditingMedia] = useState<any>(null);
   const [newName, setNewName] = useState("");
 
+  // DND State
+  const [draggedItemId, setDraggedItemId] = useState<string | number | null>(null);
+
   const { data: media = [], isLoading } = useQuery({
-    queryKey: ['media'],
-    queryFn: () => mediaApi.getAll()
+    queryKey: ['media', currentFolderId],
+    queryFn: () => mediaApi.getAll(currentFolderId)
+  });
+
+  const navigateToFolder = (folderId: string | null, folderName: string) => {
+    setCurrentFolderId(folderId);
+    if (folderId === null) {
+      setBreadcrumbs([{ id: null, name: "Library" }]);
+    } else {
+      // Logic for adding to breadcrumbs (simplified for now)
+      setBreadcrumbs(prev => {
+        const idx = prev.findIndex(b => b.id === folderId);
+        if (idx !== -1) return prev.slice(0, idx + 1);
+        return [...prev, { id: folderId, name: folderName }];
+      });
+    }
+  };
+
+  const createFolderMutation = useMutation({
+    mutationFn: (name: string) => mediaApi.createFolder(name, currentFolderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+      toast({ title: "Folder created" });
+    }
+  });
+
+  const moveMutation = useMutation({
+    mutationFn: ({ id, parentId }: { id: string | number, parentId: string | null }) => 
+      mediaApi.update(id, { parent_id: parentId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+      toast({ title: "Item moved" });
+    }
   });
 
   const deleteMutation = useMutation({
     mutationFn: mediaApi.delete,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
-      toast({ title: "Media deleted", variant: "default" });
+      toast({ title: "Media deleted" });
     },
     onError: (err: any) => {
-      const msg = err.response?.data?.detail || err.message;
-      toast({ title: "Delete failed", description: msg, variant: "destructive" });
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
     }
   });
 
   const uploadMutation = useMutation({
-    mutationFn: ({ file, name }: { file: File; name?: string }) => mediaApi.upload(file, name),
+    mutationFn: ({ file, name }: { file: File; name?: string }) => 
+      mediaApi.upload(file, currentFolderId, name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       setUploadOpen(false);
-      setUploadName(""); // Reset name
-      toast({ title: "Upload successful", variant: "default" });
-    },
-    onError: (err: any) => {
-      const msg = err.response?.data?.detail || err.message;
-      toast({ title: "Upload failed", description: msg, variant: "destructive" });
+      setUploadName("");
+      toast({ title: "Upload successful" });
     }
   });
 
   const youtubeMutation = useMutation({
-    mutationFn: ({ url, name }: { url: string; name?: string }) => mediaApi.addYoutube(url, name),
+    mutationFn: ({ url, name }: { url: string; name?: string }) => 
+      mediaApi.addYoutube(url, currentFolderId, name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       setYoutubeUrl("");
-      setUploadName(""); // Reset name
+      setUploadName("");
       setUploadOpen(false);
-      toast({ title: "YouTube embed added", variant: "default" });
-    },
-    onError: (err: any) => {
-      const msg = err.response?.data?.detail || err.message;
-      toast({ title: "YouTube download failed", description: msg, variant: "destructive" });
+      toast({ title: "YouTube embed added" });
     }
   });
 
@@ -77,58 +118,46 @@ export default function MediaLibraryPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["media"] });
       setEditingMedia(null);
-      toast({ title: "Media renamed", variant: "default" });
-    },
-    onError: (err: any) => {
-      const msg = err.response?.data?.detail || err.message;
-      toast({ title: "Rename failed", description: msg, variant: "destructive" });
-    },
+      toast({ title: "Media renamed" });
+    }
   });
-
-  const handleYoutubeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (youtubeUrl.trim()) {
-      youtubeMutation.mutate({ url: youtubeUrl.trim(), name: uploadName.trim() || undefined });
-    }
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      uploadMutation.mutate({ file, name: uploadName.trim() || undefined });
-    }
-  };
-
-  const handleRenameSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingMedia && newName.trim()) {
-      updateMutation.mutate({ id: editingMedia.id, name: newName.trim() });
-    }
-  };
 
   const getYoutubeThumbnail = (url: string) => {
     let videoId = "";
-    if (url.includes("v=")) {
-      videoId = url.split("v=")[1].split("&")[0];
-    } else if (url.includes("youtu.be/")) {
-      videoId = url.split("youtu.be/")[1].split("?")[0];
-    } else {
-      videoId = url;
-    }
+    if (url.includes("v=")) videoId = url.split("v=")[1].split("&")[0];
+    else if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
+    else videoId = url;
     return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   };
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
             <h1 className="text-2xl font-semibold text-foreground">Media Library</h1>
-            <p className="text-sm text-muted-foreground mt-1">{media.length} files tracked</p>
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              {breadcrumbs.map((b, i) => (
+                <div key={b.id || 'root'} className="flex items-center gap-1.5">
+                  {i > 0 && <ChevronRight className="h-3 w-3 opacity-50" />}
+                  <button 
+                    onClick={() => navigateToFolder(b.id, b.name)}
+                    className={cn(
+                      "hover:text-primary transition-colors flex items-center gap-1",
+                      i === breadcrumbs.length - 1 && "text-foreground font-medium"
+                    )}
+                  >
+                    {i === 0 && <Home className="h-3.5 w-3.5" />}
+                    {b.name}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ['media'] })}>
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => createFolderMutation.mutate(prompt("Folder name:", "New Folder") || "")}>
+              <FolderPlus className="h-4 w-4 mr-2" />New Folder
             </Button>
             <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
               <DialogTrigger asChild>
@@ -138,7 +167,7 @@ export default function MediaLibraryPage() {
                 <DialogHeader>
                   <DialogTitle>Upload Media</DialogTitle>
                   <DialogDescription>
-                    Choose a file from your computer or provide a YouTube URL.
+                    Uploading into: <strong>{breadcrumbs[breadcrumbs.length-1].name}</strong>
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -152,10 +181,11 @@ export default function MediaLibraryPage() {
                       className="w-full bg-secondary rounded-md px-3 py-2 text-sm border-none focus:ring-1 focus:ring-primary outline-none"
                     />
                   </div>
-
                   <div
-                    className={`border-2 border-dashed rounded-lg p-10 text-center transition-colors relative cursor-pointer ${dragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-                      }`}
+                    className={cn(
+                      "border-2 border-dashed rounded-lg p-10 text-center transition-colors relative cursor-pointer",
+                      dragActive ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                    )}
                     onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
                     onDragLeave={() => setDragActive(false)}
                     onDrop={(e) => {
@@ -169,26 +199,27 @@ export default function MediaLibraryPage() {
                     {uploadMutation.isPending ? (
                       <div className="flex flex-col items-center">
                         <RefreshCw className="h-8 w-8 text-primary animate-spin mb-3" />
-                        <p className="text-sm text-foreground">Uploading to storage...</p>
+                        <p className="text-sm text-foreground">Uploading...</p>
                       </div>
                     ) : (
                       <>
                         <Upload className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-                        <p className="text-sm text-foreground mb-1">Drag and drop files here or click to select</p>
-                        <p className="text-xs text-muted-foreground mb-4">JPG, PNG, MP4, WEBM</p>
+                        <p className="text-sm text-foreground mb-1">Drag and drop or click</p>
                         <input
                           ref={fileInputRef}
                           type="file"
                           className="hidden"
-                          onChange={handleFileSelect}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) uploadMutation.mutate({ file, name: uploadName.trim() || undefined });
+                          }}
                           accept="image/*,video/*"
                         />
-                        <Button variant="outline" size="sm" type="button">Select Files</Button>
+                        <Button variant="outline" size="sm">Select Files</Button>
                       </>
                     )}
                   </div>
                 </div>
-
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
                     <span className="w-full border-t border-border" />
@@ -197,22 +228,22 @@ export default function MediaLibraryPage() {
                     <span className="bg-background px-2 text-muted-foreground">OR</span>
                   </div>
                 </div>
-
-                <form onSubmit={handleYoutubeSubmit} className="space-y-3">
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Add via YouTube URL</p>
-                    <div className="flex gap-2">
-                      <input
-                        type="url"
-                        value={youtubeUrl}
-                        onChange={(e) => setYoutubeUrl(e.target.value)}
-                        placeholder="https://www.youtube.com/watch?v=..."
-                        className="flex-1 bg-secondary rounded-md px-3 py-2 text-sm border-none focus:ring-1 focus:ring-primary outline-none"
-                      />
-                      <Button type="submit" disabled={youtubeMutation.isPending || !youtubeUrl.trim()}>
-                        {youtubeMutation.isPending ? "Adding..." : "Add Video"}
-                      </Button>
-                    </div>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  if (youtubeUrl.trim()) youtubeMutation.mutate({ url: youtubeUrl.trim(), name: uploadName.trim() || undefined });
+                }} className="space-y-3">
+                  <p className="text-sm font-medium">Add via YouTube URL</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={youtubeUrl}
+                      onChange={(e) => setYoutubeUrl(e.target.value)}
+                      placeholder="https://youtube.com/..."
+                      className="flex-1 bg-secondary rounded-md px-3 py-2 text-sm border-none focus:ring-1 focus:ring-primary outline-none"
+                    />
+                    <Button type="submit" disabled={youtubeMutation.isPending || !youtubeUrl.trim()}>
+                      {youtubeMutation.isPending ? "Adding..." : "Add Video"}
+                    </Button>
                   </div>
                 </form>
               </DialogContent>
@@ -220,94 +251,130 @@ export default function MediaLibraryPage() {
           </div>
         </div>
 
+        {/* Media Grid */}
         {isLoading ? (
-          <div className="p-10 text-center text-muted-foreground bg-card border border-border rounded-lg">Loading media from network...</div>
+          <div className="p-10 text-center text-muted-foreground bg-card border border-border rounded-lg">Loading...</div>
         ) : media.length === 0 ? (
-          <div className="p-10 text-center text-muted-foreground bg-card border border-border rounded-lg">No media files uploaded yet.</div>
+          <div className="p-20 text-center text-muted-foreground bg-card border border-border rounded-lg border-dashed">
+            <Folder className="h-10 w-10 mx-auto mb-4 opacity-20" />
+            <p>This folder is empty.</p>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {media.map((item: any) => (
-              <div key={item.id} className="bg-card border border-border rounded-lg overflow-hidden group animate-fade-in">
-                <div className="aspect-video bg-secondary flex items-center justify-center relative overflow-hidden">
-                  {item.type === "image" ? (
-                    <img src={item.url} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
-                  ) : item.type === "youtube" ? (
-                    <img
-                      src={getYoutubeThumbnail(item.url)}
-                      alt={item.name}
-                      className="absolute inset-0 w-full h-full object-cover"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        if (!target.src.includes('0.jpg')) {
-                          target.src = target.src.replace('hqdefault.jpg', '0.jpg');
-                        }
-                      }}
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center text-muted-foreground">
-                      <Film className="h-8 w-8 mb-2" />
-                      <span className="text-[10px] bg-black/40 px-2 py-0.5 rounded uppercase">Video File</span>
-                    </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {media.map((item: any) => {
+              const isFolder = item.node_type === 'folder';
+              
+              return (
+                <div 
+                  key={item.id} 
+                  draggable={!isFolder} // Only files are draggable for now
+                  onDragStart={(e) => {
+                    setDraggedItemId(item.id);
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  onDragOver={(e) => {
+                    if (isFolder && draggedItemId !== item.id) {
+                      e.preventDefault();
+                      (e.currentTarget as HTMLDivElement).classList.add('bg-primary/10', 'border-primary');
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    (e.currentTarget as HTMLDivElement).classList.remove('bg-primary/10', 'border-primary');
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLDivElement).classList.remove('bg-primary/10', 'border-primary');
+                    if (isFolder && draggedItemId) {
+                      moveMutation.mutate({ id: draggedItemId, parentId: String(item.id) });
+                      setDraggedItemId(null);
+                    }
+                  }}
+                  className={cn(
+                    "bg-card border border-border rounded-lg overflow-hidden group transition-all animate-fade-in cursor-pointer",
+                    isFolder ? "hover:border-primary/50" : "hover:shadow-md"
                   )}
-                  
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                  
-                  <div className="absolute top-2 right-2 flex gap-1 z-20">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingMedia(item);
-                        setNewName(item.name);
-                      }}
-                      className="h-7 w-7 rounded-md bg-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-secondary text-foreground"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(item.id); }}
-                      className="h-7 w-7 rounded-md bg-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-white"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                  onClick={() => isFolder && navigateToFolder(String(item.id), item.name)}
+                >
+                  <div className="aspect-video bg-secondary flex items-center justify-center relative overflow-hidden">
+                    {isFolder ? (
+                      <div className="flex flex-col items-center gap-2 group-hover:scale-110 transition-transform">
+                        <Folder className="h-12 w-12 text-primary" fill="currentColor" fillOpacity={0.2} />
+                      </div>
+                    ) : item.type === "image" ? (
+                      <img src={item.url} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+                    ) : item.type === "youtube" ? (
+                      <img src={getYoutubeThumbnail(item.url)} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+                    ) : (
+                      <Film className="h-8 w-8 text-muted-foreground" />
+                    )}
+                    
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
+                    
+                    <div className="absolute top-2 right-2 flex gap-1 z-20">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingMedia(item);
+                          setNewName(item.name);
+                        }}
+                        className="h-7 w-7 rounded-md bg-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-secondary text-foreground"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(item.id); }}
+                        className="h-7 w-7 rounded-md bg-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-white"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+
+                    {!isFolder && (
+                        <div className="absolute top-2 left-2 z-20 opacity-0 group-hover:opacity-100">
+                             <div className="bg-background/80 backdrop-blur-sm p-1 rounded-md">
+                                <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                             </div>
+                        </div>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                        {isFolder ? 'Folder' : item.type}
+                      </span>
+                      {isFolder ? (
+                        <span className="text-[10px] text-primary font-bold">{item.children_count || 0} items</span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">{item.duration ? `${item.duration}s` : 'Static'}</span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="p-3">
-                  <p className="text-sm text-foreground truncate">{item.name}</p>
-                  <div className="flex items-center justify-between mt-1">
-                    <span className="text-xs text-muted-foreground uppercase">{item.type}</span>
-                    <span className="text-xs text-muted-foreground">{item.duration ? `${item.duration}s` : 'Static'}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
         <Dialog open={!!editingMedia} onOpenChange={(open) => !open && setEditingMedia(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Rename Media</DialogTitle>
-              <DialogDescription>
-                Give this media a more descriptive name for easier organization.
-              </DialogDescription>
+              <DialogTitle>Rename {editingMedia?.node_type === 'folder' ? 'Folder' : 'Media'}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleRenameSubmit} className="space-y-4 pt-2">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">Name</p>
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="Enter name..."
-                  className="w-full bg-secondary rounded-md px-3 py-2 text-sm border-none focus:ring-1 focus:ring-primary outline-none"
-                  autoFocus
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              if (editingMedia && newName.trim()) updateMutation.mutate({ id: editingMedia.id, name: newName.trim() });
+            }} className="space-y-4 pt-2">
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="w-full bg-secondary rounded-md px-3 py-2 text-sm border-none focus:ring-1 focus:ring-primary outline-none"
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
                 <Button variant="ghost" type="button" onClick={() => setEditingMedia(null)}>Cancel</Button>
-                <Button type="submit" disabled={updateMutation.isPending}>
-                  {updateMutation.isPending ? "Saving..." : "Save Changes"}
-                </Button>
+                <Button type="submit" disabled={updateMutation.isPending}>Save</Button>
               </div>
             </form>
           </DialogContent>
