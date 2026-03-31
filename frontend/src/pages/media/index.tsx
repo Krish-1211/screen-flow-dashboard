@@ -269,23 +269,25 @@ export default function MediaLibraryPage() {
                   key={item.id} 
                   draggable={!isFolder} // Only files are draggable for now
                   onDragStart={(e) => {
-                    setDraggedItemId(item.id);
+                    e.dataTransfer.setData("mediaId", String(item.id));
                     e.dataTransfer.effectAllowed = "move";
+                    setDraggedItemId(item.id);
                   }}
                   onDragOver={(e) => {
-                    if (isFolder && draggedItemId !== item.id) {
+                    if (isFolder) {
                       e.preventDefault();
-                      (e.currentTarget as HTMLDivElement).classList.add('bg-primary/10', 'border-primary');
+                      e.currentTarget.classList.add('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
                     }
                   }}
                   onDragLeave={(e) => {
-                    (e.currentTarget as HTMLDivElement).classList.remove('bg-primary/10', 'border-primary');
+                    e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
                   }}
                   onDrop={(e) => {
                     e.preventDefault();
-                    (e.currentTarget as HTMLDivElement).classList.remove('bg-primary/10', 'border-primary');
-                    if (isFolder && draggedItemId) {
-                      moveMutation.mutate({ id: draggedItemId, parentId: String(item.id) });
+                    e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
+                    const droppedItemId = e.dataTransfer.getData("mediaId");
+                    if (isFolder && droppedItemId && droppedItemId !== String(item.id)) {
+                      moveMutation.mutate({ id: droppedItemId, parentId: String(item.id) });
                       setDraggedItemId(null);
                     }
                   }}
