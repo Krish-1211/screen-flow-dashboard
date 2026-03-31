@@ -222,6 +222,32 @@ export default function PlaylistsPage() {
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              {isFolder && (
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      createMutation.mutate({ name: 'New Playlist', parent_id: String(node.id) });
+                      if (!isExpanded) toggleNode(node.id);
+                    }}
+                    className="text-muted-foreground hover:text-primary p-1"
+                    title="Add Playlist"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      createFolderMutation.mutate({ name: 'New Subfolder', type: 'playlist', parentId: String(node.id) });
+                      if (!isExpanded) toggleNode(node.id);
+                    }}
+                    className="text-muted-foreground hover:text-primary p-1"
+                    title="New Subfolder"
+                  >
+                    <FolderPlus className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -265,7 +291,18 @@ export default function PlaylistsPage() {
             >
                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                <Folder className="h-4 w-4 text-primary shrink-0" />
-               <span className="text-[11px] font-bold text-foreground truncate">{node.name}</span>
+               <span className="text-[11px] font-bold text-foreground truncate flex-1">{node.name}</span>
+               <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    createFolderMutation.mutate({ name: 'New Folder', type: 'media', parentId: String(node.id) });
+                    if (!isExpanded) toggleNode(node.id);
+                  }}
+                  className="text-muted-foreground hover:text-primary p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="New Subfolder"
+               >
+                 <FolderPlus className="h-3 w-3" />
+               </button>
             </div>
             {isExpanded && node.children && (
               <div>{renderMediaTree(node.children, level + 1)}</div>
