@@ -142,35 +142,80 @@ export default function DisplayPlayerPage() {
     return () => clearInterval(interval);
   }, [deviceId]);
 
-  const evaluateActivePlaylist = useCallback((ctx: PlayerContext): Playlist | null => {
+  const lastPlaylistRef = useRef<Playlist | null>(null);
+
+  const SAFE_PLACEHOLDER = useCallback((): Playlist => ({
+    id: 'safe-recovery',
+    name: 'Safe Recovery',
+    node_type: 'playlist',
+    items: [{
+      id: 'safe-item',
+      mediaId: 'safe-media',
+      duration: 60,
+      order: 0,
+      media: {
+        id: 'safe-media',
+        name: 'System Recovery',
+        type: 'system_gap',
+        url: '',
+        node_type: 'file'
+      }
+    }]
+  }), []);
+
+  const evaluateActivePlaylist = useCallback((ctx: PlayerContext): Playlist => {
     const now = new Date();
+    // 0 = Monday ... 6 = Sunday (Matches JS getDay() shift if needed, but signage typically 0=Mon)
     const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
     const activeSchedules = ctx.schedules.filter(s => {
       if (!s.days.includes(currentDay)) return false;
-      const [sh, sm] = s.startTime.split(':').map(Number);
-      const [eh, em] = s.endTime.split(':').map(Number);
-      const start = sh * 60 + sm;
-      const end = eh * 60 + em;
       
+      const toMin = (t: string) => {
+        const [h, m] = t.split(':').map(Number);
+        return (h || 0) * 60 + (m || 0);
+      };
+      
+      const start = toMin(s.startTime);
+      const end = toMin(s.endTime);
+      
+      // Handle Overnight (e.g. 22:00 to 02:00)
       if (end < start) {
-        return currentMinutes >= start || currentMinutes < end;
+        return currentMinutes >= start || currentMinutes <= end;
       }
-      return currentMinutes >= start && currentMinutes < end;
+      
+      // Normal Range (Inclusive as requested)
+      return currentMinutes >= start && currentMinutes <= end;
     });
 
-    let targetPlaylistId: string | null = null;
+    let targetId: string | null = null;
+
     if (activeSchedules.length > 0) {
-      activeSchedules.sort((a, b) => b.startTime.localeCompare(a.startTime));
-      targetPlaylistId = String(activeSchedules[0].playlistId);
+      // Deterministic Tie-breaking: Latest Start Time Wins, then ID
+      activeSchedules.sort((a, b) => {
+        if (a.startTime !== b.startTime) return b.startTime.localeCompare(a.startTime);
+        return String(b.id).localeCompare(String(a.id));
+      });
+      targetId = String(activeSchedules[0].playlistId);
     } else {
-      targetPlaylistId = ctx.screen.defaultPlaylistId ? String(ctx.screen.defaultPlaylistId) : null;
+      // Default Fallback
+      targetId = ctx.screen.defaultPlaylistId ? String(ctx.screen.defaultPlaylistId) : null;
     }
 
-    if (!targetPlaylistId || targetPlaylistId === "none") return null;
-    return ctx.playlists.find(p => String(p.id) === targetPlaylistId) || null;
-  }, []);
+    const found = ctx.playlists.find(p => String(p.id) === targetId && p.items?.length);
+    
+    if (found) {
+      lastPlaylistRef.current = found;
+      return found;
+    }
+
+    // Secondary Fallback: Last Played
+    if (lastPlaylistRef.current) return lastPlaylistRef.current;
+
+    // Final Fallback: Safe Placeholder
+    return SAFE_PLACEHOLDER();
+  }, [SAFE_PLACEHOLDER]);
 
   const loadPlaylist = useCallback(async (isInitial = false) => {
     if (!deviceId) return;
