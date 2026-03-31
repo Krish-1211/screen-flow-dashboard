@@ -59,6 +59,20 @@ app.use(cors({
 app.use(express.json());
 app.use(pinoHttp({ logger }));
 
+// ── Step 1.1: CSP Headers for Production Stability ──
+app.use((req, res, next) => {
+    res.setHeader(
+        "Content-Security-Policy",
+        "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+        "script-src * 'unsafe-inline' 'unsafe-eval'; " +
+        "connect-src * 'unsafe-inline'; " +
+        "img-src * data: blob:; " +
+        "frame-src *; " +
+        "style-src * 'unsafe-inline';"
+    );
+    next();
+});
+
 // ── Step 2: Static Files (Media) ──
 const uploadsDir = 'public/uploads';
 if (!fs.existsSync(uploadsDir)) {
