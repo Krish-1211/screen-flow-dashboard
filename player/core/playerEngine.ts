@@ -43,6 +43,13 @@ export class PlayerEngine {
     (context.playlists || []).forEach(pl => newPlaylistMap.set(String(pl.id), pl));
     this.playlists = newPlaylistMap;
 
+    // Phase 4: Diagnostic Visibility
+    console.log("ENGINE UPDATED:", {
+      schedules: this.schedules,
+      playlists: Array.from(this.playlists.keys()),
+      defaultPlaylistId: this.defaultPlaylistId
+    });
+
     this.checkSchedule();
   }
 

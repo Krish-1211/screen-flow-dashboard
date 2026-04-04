@@ -229,6 +229,10 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
        });
      });
 
+    // Phase 1: Expose engine to window (MANDATORY for debugging)
+    (window as any).engine = engine;
+    console.log("[player] Engine initialized and exposed to window.engine");
+
     const handleSyncStatus = (status: SyncStatus) => {
       setIsOffline(!status.online);
       setIsStaleOffline(!status.online && status.stale);
@@ -239,6 +243,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
       deviceId,
       apiBaseUrl,
       (context: PlayerContext) => {
+        console.log("CONTEXT RECEIVED:", context);
         engine.updateContext(context);
         stateMachine.transition('PLAYLIST_READY');
       },
@@ -251,6 +256,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
 
     const cached = sync.bootstrapFromLocal();
     if (cached?.context) {
+      console.log("BOOTSTRAPPING FROM CACHE:", cached.context);
       engine.updateContext(cached.context);
       stateMachine.transition('PLAYLIST_READY');
     }
