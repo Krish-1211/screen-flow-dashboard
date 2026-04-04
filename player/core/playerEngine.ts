@@ -25,19 +25,19 @@ export class PlayerEngine {
   }
 
   public updateContext(context: PlayerContext) {
-    // Phase 4: Context Validation
-    if (!context || !context.playlists || context.playlists.length === 0) {
-      this.log({ type: 'error', message: 'Invalid or empty context received from backend' });
-      // Keep existing context or fallback will handle from state
-    }
+    if (!context) return;
+    
+    console.log("CONTEXT SYNC RECEIVED:", context);
 
     this.currentContext = context;
-    // Phase 10: Robust schedule extraction from context
+    // Ensure all critical data is assigned
     this.schedules = (context.schedules || []).map(s => ({
       ...s,
-      playlistId: String(s.playlistId)
+      playlistId: String((s as any).playlistId || (s as any).playlist_id)
     }));
-    this.defaultPlaylistId = context.screen?.defaultPlaylistId;
+    
+    // Support both naming conventions from backend
+    this.defaultPlaylistId = context.screen?.defaultPlaylistId || context.screen?.playlist_id;
     
     const newPlaylistMap = new Map<string, Playlist>();
     (context.playlists || []).forEach(pl => newPlaylistMap.set(String(pl.id), pl));
@@ -88,7 +88,6 @@ export class PlayerEngine {
     if (nextChange) {
       const msUntilChange = nextChange.getTime() - Date.now();
       // Phase 2: Dynamic scheduling with 500ms safety buffer
-      // Clamp between 2s and 30s for responsiveness/safety balance
       delay = Math.min(Math.max(2000, msUntilChange + 500), 30000);
     } else {
       delay = 30000; // No changes soon, check every 30s
@@ -129,7 +128,6 @@ export class PlayerEngine {
   }
 
   private log(data: any) {
-    // Phase 5: Structured Logging
     console.log(JSON.stringify({
       timestamp: new Date().toISOString(),
       ...data
@@ -138,7 +136,6 @@ export class PlayerEngine {
 
   private toMinutes(timeString: string | undefined): number {
     if (!timeString) return 0;
-    // Phase 2: Handle HH:mm and HH:mm:ss, ignore seconds
     const parts = String(timeString).split(':').map(Number);
     const h = isNaN(parts[0]) ? 0 : parts[0];
     const m = isNaN(parts[1]) ? 0 : parts[1];
@@ -163,92 +160,66 @@ export class PlayerEngine {
         matchesTime = currentMinutes >= start && currentMinutes < end;
       }
 
-      console.log({
-        scheduleId: s.id,
-        playlistId: s.playlistId,
-        currentDay,
-        daysArray: days,
-        matchesDay,
-        currentMinutes,
-        startTime: s.startTime,
-        endTime: s.endTime,
-        startMin: start,
-        endMin: end,
-        matchesTime
-      });
-
-      // Phase 4: Validate playlist existence in schedule
-      if (!this.playlists.has(String(s.playlistId))) {
-        this.log({ type: 'warning', message: `Schedule ${s.id} references missing playlist ${s.playlistId}` });
-        return false;
-      }
-
-      return matchesDay && matchesTime;
+      const isActive = matchesDay && matchesTime;
+      
+      console.log(`[player] Schedule ${s.id}: matchesDay=${matchesDay}, matchesTime=${matchesTime} -> isActive=${isActive}`);
+      return isActive;
     });
-
-    console.log("Active Schedules:", activeSchedules);
 
     if (!this.playlists || this.playlists.size === 0) {
-      console.error("No playlists available in library → triggering hard fallback");
-      return null; // Let the fallback chain handle the safe black gap
+      console.error("No playlists available in library");
+      return null;
     }
 
-    let targetPlaylistId: string | null = null;
+    // 🔥 1. TRY SCHEDULE FIRST
+    const activeSchedule = activeSchedules.length > 0 ? activeSchedules[0] : null;
 
-    if (activeSchedules.length > 0) {
-      activeSchedules.sort((a, b) => this.toMinutes(b.startTime) - this.toMinutes(a.startTime));
-      targetPlaylistId = String(activeSchedules[0].playlistId);
-    } else if (this.defaultPlaylistId && this.playlists.has(String(this.defaultPlaylistId))) {
-      targetPlaylistId = String(this.defaultPlaylistId);
-    } else {
-      // Phase 5: Hard Fallback to first available if all else fails
-      const firstAvailable = Array.from(this.playlists.keys())[0];
-      console.warn("No active schedule or valid default. Falling back to first available playlist:", firstAvailable);
-      targetPlaylistId = firstAvailable;
-    }
-
-    console.log({
-      schedules: this.schedules,
-      playlists: Array.from(this.playlists.entries()),
-      targetPlaylistId
-    });
-
-    let playlist = targetPlaylistId ? this.playlists.get(targetPlaylistId) : null;
-
-    if (!playlist) {
-      console.error("Playlist not found for target:", targetPlaylistId);
-      
-      // Secondary fallback chain
-      if (this.defaultPlaylistId && this.playlists.has(String(this.defaultPlaylistId))) {
-        playlist = this.playlists.get(String(this.defaultPlaylistId))!;
-      } else {
-        const firstId = Array.from(this.playlists.keys())[0];
-        playlist = this.playlists.get(firstId) || null;
+    if (activeSchedule) {
+      const scheduledPl = this.playlists.get(String(activeSchedule.playlistId));
+      if (scheduledPl) {
+        console.log("[player] Priority 1: Using scheduled playlist:", scheduledPl.id);
+        return scheduledPl;
       }
-
-      if (playlist) return playlist;
-
-      // Phase 1: Pure UI Fallback (Solid Black Gap)
-      this.log({ type: 'fallback', message: 'Using safe system fallback (no playlists matched)' });
-      return {
-        id: 'fallback-safe',
-        name: 'Safe Fallback',
-        items: [{
-          id: 'safe-placeholder',
-          mediaId: 'safe-placeholder',
-          order: 0,
-          duration: 10,
-          media: {
-            id: 'safe-placeholder',
-            name: 'Safe Fallback',
-            type: 'system_gap',
-            url: ''
-          }
-        }]
-      };
+      console.warn("[player] Scheduled playlist missing in library:", activeSchedule.playlistId);
     }
 
-    return playlist;
+    // 🔥 2. FALLBACK TO SCREEN ASSIGNED PLAYLIST (DEFAULT)
+    if (this.defaultPlaylistId) {
+      const defaultPl = this.playlists.get(String(this.defaultPlaylistId));
+      if (defaultPl) {
+        console.log("[player] Priority 2: Using screen assigned playlist:", defaultPl.id);
+        return defaultPl;
+      }
+      console.warn("[player] Default playlist missing in library:", this.defaultPlaylistId);
+    }
+
+    // 🔥 3. LAST RESORT (FIRST AVAILABLE IN LIBRARY)
+    if (this.playlists.size > 0) {
+      const firstId = Array.from(this.playlists.keys())[0];
+      const fallbackPl = this.playlists.get(firstId);
+      if (fallbackPl) {
+        console.log("[player] Priority 3: Using last-resort fallback playlist:", fallbackPl.id);
+        return fallbackPl;
+      }
+    }
+
+    console.error("[player] No playlist available whatsoever → returning safe fallback");
+    return {
+      id: 'fallback-safe',
+      name: 'Safe Fallback',
+      items: [{
+        id: 'safe-placeholder',
+        mediaId: 'safe-placeholder',
+        order: 0,
+        duration: 10,
+        media: {
+          id: 'safe-placeholder',
+          name: 'Safe Fallback',
+          type: 'system_gap',
+          url: ''
+        }
+      }]
+    };
   }
 
   private applyPlaylistToEngine(pl: Playlist) {
@@ -266,7 +237,7 @@ export class PlayerEngine {
 
     const switchLog = { type: 'playlist_switch', from: currentId, to: newId };
 
-    // Phase 3: Force switch threshold logic
+    // Threshold logic for forcing switch
     let shouldForce = false;
     if (this.loopRunning && this.playlist.length > 0) {
       const currentItem = this.playlist[this.currentIndex];
@@ -274,7 +245,6 @@ export class PlayerEngine {
       const totalDurationMs = Math.max(1, currentItem?.duration || 10) * 1000;
       const remainingMs = totalDurationMs - elapsedMs;
 
-      // Force switch if remaining time is > 15s or item has no fixed duration (video)
       if (remainingMs > 15000 || currentItem?.media?.type === 'video') {
         shouldForce = true;
       }
@@ -308,7 +278,7 @@ export class PlayerEngine {
     }
     console.info('[player] playback start');
     this.shouldRun = true;
-    this.clearPendingWait(); // Ensure we don't carry over old waits
+    this.clearPendingWait();
     void this.runLoop();
   }
 
@@ -319,7 +289,7 @@ export class PlayerEngine {
 
     while (this.shouldRun && token === this.loopToken) {
       if (this.playlist.length === 0) {
-        await this.waitForAdvance(2000); // Wait 2s before checking again
+        await this.waitForAdvance(2000);
         continue;
       }
 
