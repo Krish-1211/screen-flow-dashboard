@@ -510,6 +510,18 @@ export default function DisplayPlayerPage() {
   const isGap = currentItem?.media?.type === 'system_gap' && (playlist.id === 'safe-recovery');
   const mediaUrl = currentItem?.media?.url || '';
 
+  // 🧨 TRUTH-FINDER LOGS (Check console if "Media Error" appears)
+  console.log("PLAYING INDEX:", currentIndex);
+  console.log("ITEM DATA:", currentItem);
+  console.log("RERENDER URL:", mediaUrl);
+
+  // 🛡️ Pre-emptive strike on empty/undefined URLs for videos
+  if (isVideo && !mediaUrl) {
+    console.error("CRITICAL: Video item has NO URL. Skipping immediately to prevent Media Error.");
+    setTimeout(() => advanceMedia(), 0); 
+    return null; // Return empty to prevent <video src=""> crash
+  }
+
   const getYoutubeEmbedUrl = (url: string) => {
     let videoId = "";
     if (url.includes("v=")) videoId = url.split("v=")[1].split("&")[0];
