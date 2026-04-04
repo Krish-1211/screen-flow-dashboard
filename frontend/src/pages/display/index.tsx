@@ -419,8 +419,10 @@ export default function DisplayPlayerPage() {
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-6 text-center">
         <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
-        <h1 className="text-2xl font-bold">No Content Assigned</h1>
-        <p className="mt-2 text-gray-400 max-w-md">Please assign a playlist to this screen from the dashboard to begin playback.</p>
+        <h1 className="text-2xl font-bold">Waiting for Content</h1>
+        <p className="mt-2 text-gray-400 max-w-md">
+          {context ? "No active schedule or default playlist found for this screen." : "Connecting to server..."}
+        </p>
         
         <div className="mt-8 flex flex-col items-center gap-2">
           <span className="text-4xl font-bold font-mono tracking-tighter text-gray-100">{localTimeStrShort(errorNow)}</span>
@@ -524,6 +526,20 @@ export default function DisplayPlayerPage() {
           <span className="text-xs text-red-500 font-bold uppercase">Offline</span>
         </div>
       )}
+
+      {/* --- Diagnostic HUD --- */}
+      <div className="absolute bottom-4 left-4 z-50 pointer-events-none group">
+        <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-lg p-2 text-[10px] font-mono text-white/40 group-hover:text-white/80 transition-opacity">
+          <div>PLAYING: {playlist.name}</div>
+          <div>ID: {playlist.id}</div>
+          <div className="flex gap-2 mt-1">
+            <span className={`px-1 rounded ${playlist.id === 'safe-recovery' ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'}`}>
+              {playlist.id === 'safe-recovery' ? 'SAFE_GAP' : 'STABLE'}
+            </span>
+            <span>{localTimeStrShort(new Date())}</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
