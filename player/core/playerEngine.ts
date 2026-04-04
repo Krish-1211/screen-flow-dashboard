@@ -184,25 +184,25 @@ export class PlayerEngine {
     }
 
     // Strategy 3: Persistence (If we have content, keep playing it instead of flashing clock)
-    if (this._playlistId && this.playlists.has(this._playlistId)) {
+    if (this._playlistId && this._playlistId !== 'fallback-safe' && this.playlists.has(this._playlistId)) {
       const currentPl = this.playlists.get(this._playlistId);
       if (currentPl) {
-        console.log("[player] Priority 3: No change scheduled, staying on current playlist:", currentPl.id);
+        console.log("[player] Priority 3: Persistence - Staying on current playlist:", currentPl.id);
         return currentPl;
       }
     }
 
-    // Strategy 4: Fallback to first available playlist if any exist
+    // Strategy 4: Fallback to first available playlist (if any playlists exist in library)
     if (this.playlists.size > 0) {
       const firstId = Array.from(this.playlists.keys())[0];
       const firstPl = this.playlists.get(firstId);
       if (firstPl) {
-        console.log("[player] Priority 4: No active content, picking first available playlist:", firstPl.id);
+        console.log("[player] Priority 4: Fallback - Picking first available playlist:", firstPl.id);
         return firstPl;
       }
     }
 
-    console.warn("[player] No playlists found at all -> system gap idle");
+    console.warn("[player] No playlists assigned or found in library -> system gap");
     return {
       id: 'fallback-safe',
       name: 'Safe Fallback',
