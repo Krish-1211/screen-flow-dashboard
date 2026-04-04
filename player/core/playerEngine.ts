@@ -53,6 +53,7 @@ export class PlayerEngine {
   }
 
   private checkSchedule() {
+    console.log("[SCHEDULE] checkSchedule fired, calling applyPlaylist");
     if (this.scheduleCheckTimer) clearTimeout(this.scheduleCheckTimer);
     
     console.log("===== SCHEDULE DEBUG =====");

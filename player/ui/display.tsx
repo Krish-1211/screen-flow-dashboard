@@ -57,10 +57,11 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
 
   useEffect(() => {
     const engine = new PlayerEngine(async (item) => {
-
+      console.log("[ENGINE CB] onRender fired, type:", item.media?.type, "lock:", loopLockRef.current);
+      
       // 🔒 BLOCK ENGINE DURING LOOP
       if (loopLockRef.current) {
-        console.log("[player] BLOCKED engine update (loop)");
+        console.log("[ENGINE CB] BLOCKED engine update (loop lock active)");
         return;
       }
 
@@ -122,10 +123,13 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   }, [deviceId, apiBaseUrl]);
 
   const handleVideoEnded = () => {
+    console.log("[ENDED] handleVideoEnded fired");
     const engine = engineRef.current;
     if (!engine) return;
 
     const currentPlaylist = playlistItemsRef.current;
+    console.log("[ENDED] playlist length:", currentPlaylist.length);
+    console.log("[ENDED] loopLockRef before lock:", loopLockRef.current);
 
     // 🔥 SINGLE VIDEO LOOP FIX (FINAL - USING REFS)
     if (currentPlaylist.length === 1) {
@@ -135,9 +139,11 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
 
       // 1. 🔒 Lock BEFORE anything
       loopLockRef.current = true;
+      console.log("[ENDED] lock SET, stopping engine");
 
       // 2. ✅ Pause engine so it doesn't push system_gap or advance
       engine.stopPlaybackLoop();
+      console.log("[ENDED] engine stopped");
 
       // 3. Show black screen image
       const blackItem: PlaylistItem = {
@@ -161,6 +167,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
 
       // 4. Restart original content after delay
       setTimeout(() => {
+        console.log("[ENDED] timeout fired, restoring video");
         if (lockedLayer === 'A') {
           setItemA({ item: originalItem, url: originalUrl });
         } else {
@@ -171,7 +178,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
 
         // 5. ✅ Restart engine loop after video is restored
         engine.startPlayback();
-        console.log("[player] loop restarted (lock released, engine resumed)");
+        console.log("[ENDED] engine restarted");
       }, 1000);
 
       return;
