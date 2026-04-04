@@ -330,21 +330,15 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     }
   }, [activeLayer, itemA.item, itemB.item, playlistItems]);
 
-  const handleVideoEnded = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+  const handleVideoEnded = () => {
     const engine = engineRef.current;
     if (!engine) return;
 
-    // 🧠 SINGLE VIDEO -> HARD LOOP (NO REACT STATE CHANGE)
-    if (playlistItems.length === 1) {
-      console.log("[player] HARD LOOP (direct DOM reset, no re-render)");
-      const video = e.currentTarget;
-      video.currentTime = 0;
-      void video.play().catch(() => {});
-      return;
+    // 🧠 MULTI-ITEM CASE ONLY: Advance engine
+    if (playlistItems.length > 1) {
+      console.log("[player] VIDEO ENDED, advancing engine...");
+      engine.onMediaEnded();
     }
-
-    console.log("[player] VIDEO ENDED, advancing engine...");
-    engine.onMediaEnded();
   };
 
   const handleMediaError = () => {
@@ -489,6 +483,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
             autoPlay
             playsInline
             muted={layer !== activeLayer} // Only unmute active layer
+            loop={playlistItems.length === 1}
             preload="auto"
             onEnded={layer === activeLayer ? handleVideoEnded : undefined}
             onError={layer === activeLayer ? handleMediaError : undefined}
