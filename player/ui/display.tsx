@@ -18,7 +18,6 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [state, setState] = useState<PlayerState>(PlayerState.IDLE);
-  const [isTransitioning, setIsTransitioning] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [isStaleOffline, setIsStaleOffline] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -331,27 +330,16 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     }
   }, [activeLayer, itemA.item, itemB.item, playlistItems]);
 
-  const handleVideoEnded = () => {
+  const handleVideoEnded = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const engine = engineRef.current;
     if (!engine) return;
 
-    // SINGLE VIDEO LOOP CASE: Pause engine schedule checks 
+    // 🧠 SINGLE VIDEO -> HARD LOOP (NO REACT STATE CHANGE)
     if (playlistItems.length === 1) {
-      console.log("[player] Manual loop transition started");
-      setIsTransitioning(true);
-      engine.isLooping = true; // PAUSE THE ENGINE LOGIC
-
-      setTimeout(() => {
-        const activeVideo = activeLayer === 'A' ? videoRefA.current : videoRefB.current;
-        if (activeVideo) {
-          activeVideo.currentTime = 0;
-          void activeVideo.play().catch(() => {});
-        }
-        
-        setIsTransitioning(false);
-        engine.isLooping = false; // RELEASE THE ENGINE
-        console.log("[player] Manual loop transition completed");
-      }, 300);
+      console.log("[player] HARD LOOP (direct DOM reset, no re-render)");
+      const video = e.currentTarget;
+      video.currentTime = 0;
+      void video.play().catch(() => {});
       return;
     }
 
@@ -475,9 +463,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
           willChange: 'opacity'
         }}
       >
-        {isTransitioning ? (
-           <div className="w-full h-full bg-black z-20" />
-        ) : isGap ? (
+        {isGap ? (
           <div className="w-full h-full bg-black flex flex-col items-center justify-center p-20 select-none">
             <div className="relative text-center">
               <div className="absolute inset-0 bg-primary/20 blur-[100px] rounded-full scale-150 animate-pulse" />

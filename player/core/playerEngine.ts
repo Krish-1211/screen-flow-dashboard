@@ -18,7 +18,6 @@ export class PlayerEngine {
   private currentContext: PlayerContext | null = null;
   private scheduleCheckTimer: ReturnType<typeof setTimeout> | null = null;
   private currentItemStartedAt = 0;
-  public isLooping = false;
 
   constructor(onRender: (item: PlaylistItem) => void) {
     this.onRender = onRender;
@@ -53,10 +52,6 @@ export class PlayerEngine {
   }
 
   private checkSchedule() {
-    if (this.isLooping) {
-      console.log("[player] Skipping schedule check during loop transition");
-      return;
-    }
     if (this.scheduleCheckTimer) clearTimeout(this.scheduleCheckTimer);
     
     console.log("===== SCHEDULE DEBUG =====");
