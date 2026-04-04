@@ -76,6 +76,7 @@ export default function DisplayPlayerPage() {
   }, []);
 
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isLoopingDelay, setIsLoopingDelay] = useState(false);
   const [connected, setConnected] = useState(navigator.onLine);
   const [context, setContext] = useState<PlayerContext | null>(null);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
@@ -498,7 +499,9 @@ export default function DisplayPlayerPage() {
             transition: 'opacity 200ms ease'
           }}
         >
-          {isGap ? (
+          {isLoopingDelay ? (
+            <div className="w-full h-full bg-black" />
+          ) : isGap ? (
             <div className="w-full h-full bg-black flex flex-col items-center justify-center p-20 select-none">
               <div className="relative">
                 {/* 🧠 Premium Glow behind clock */}
@@ -543,16 +546,24 @@ export default function DisplayPlayerPage() {
               autoPlay
               playsInline
               muted={muted}
-              loop={playlist.items.length === 1}
+              loop={false}
               preload="auto"
               onError={handleMediaError}
               onEnded={() => {
                 if (playlist.items.length === 1) {
-                   console.log("[player] Single item video loop restart");
+                   console.log("[player] Manual 500ms black-frame loop initiated");
+                   setIsLoopingDelay(true);
                    if (videoRef.current) {
                      videoRef.current.currentTime = 0;
-                     videoRef.current.play().catch(() => {});
                    }
+                   setTimeout(() => {
+                     setIsLoopingDelay(false);
+                     // Add a check to see if the element still exists
+                     // before playing to avoid React errors.
+                     if (videoRef.current) {
+                        videoRef.current.play().catch(() => {});
+                     }
+                   }, 500); 
                 } else {
                    advanceMedia();
                 }
