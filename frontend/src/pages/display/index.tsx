@@ -470,7 +470,8 @@ export default function DisplayPlayerPage() {
   const currentItem = playlist.items[currentIndex];
   const isVideo = currentItem?.media?.type === 'video';
   const isYoutube = currentItem?.media?.type === 'youtube';
-  const isGap = currentItem?.media?.type === 'system_gap';
+  // ⛔ CLOCK-BLOCK: Only treat as "Gap" if we are truly in a recovery/empty state
+  const isGap = currentItem?.media?.type === 'system_gap' && (playlist.id === 'safe-recovery');
   const mediaUrl = currentItem?.media?.url || '';
 
   const getYoutubeEmbedUrl = (url: string) => {
@@ -509,31 +510,12 @@ export default function DisplayPlayerPage() {
              <div className="w-full h-full bg-black transition-all" />
           ) : isGap ? (
             <div className="w-full h-full bg-black flex flex-col items-center justify-center p-20 select-none">
-              <div className="relative">
-                {/* 🧠 Premium Glow behind clock */}
-                <div className="absolute inset-0 bg-primary/20 blur-[100px] rounded-full scale-150 animate-pulse" />
-                
-                <div className="relative text-center">
-                  <div className="text-[14vw] font-black text-white tracking-tighter drop-shadow-[0_0_40px_rgba(255,255,255,0.3)] leading-none">
-                    {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                  </div>
-                  
-                  <div className="flex items-center justify-center gap-6 mt-4">
-                    <div className="h-[2px] w-20 bg-gradient-to-r from-transparent to-white/20" />
-                    <div className="text-[2vw] font-medium text-white/30 uppercase tracking-[0.5em]">
-                      System Idle
-                    </div>
-                    <div className="h-[2px] w-20 bg-gradient-to-l from-transparent to-white/20" />
-                  </div>
-                </div>
-              </div>
-
-              {/* 🧠 Subtle date badge at the bottom */}
-              <div className="absolute bottom-16 px-6 py-2 rounded-full border border-white/10 bg-white/5 backdrop-blur-sm">
-                <span className="text-[1vw] text-white/60 font-medium uppercase tracking-widest">
-                  {currentTime.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
+                {/* ⛔ PROD FIXED: Clock UI is suppressed here to prevent loop flicker. 
+                    Only a simple, clean timestamp shows when content is TRULY missing. */}
+                <span className="text-white/20 text-4xl font-mono tracking-tighter">
+                  {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
                 </span>
-              </div>
+                <span className="text-white/5 text-[10px] mt-2 uppercase tracking-widest">v4.0.0-PROD FIXED</span>
             </div>
           ) : isYoutube ? (
             <iframe
@@ -557,12 +539,12 @@ export default function DisplayPlayerPage() {
               onError={handleMediaError}
               onEnded={() => {
                 if (playlist.items.length === 1) {
-                   console.log("[player] Single video end -> Transitioning to black for 300ms");
+                   console.log("[player] v4.0.0 Loop -> 500ms Black transition");
                    setIsTransitioning(true);
                    
                    if (videoRef.current) {
                      videoRef.current.currentTime = 0;
-                     videoRef.current.pause(); // Stop it during blackout
+                     videoRef.current.pause();
                    }
                    
                    setTimeout(() => {
@@ -570,7 +552,7 @@ export default function DisplayPlayerPage() {
                      if (videoRef.current) {
                         videoRef.current.play().catch(() => {});
                      }
-                   }, 300); 
+                   }, 500); // 500ms buffer to be safe
                 } else {
                    advanceMedia();
                 }
