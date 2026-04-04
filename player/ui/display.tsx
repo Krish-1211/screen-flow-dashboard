@@ -11,6 +11,7 @@ interface PlayerProps {
 }
 
 export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) => {
+  console.log("[PLAYER] Component rendered, build check:", Date.now());
   const [activeLayer, setActiveLayer] = useState<'A' | 'B'>('A');
   const [itemA, setItemA] = useState<{ item: PlaylistItem | null, url: string }>({ item: null, url: '' });
   const [itemB, setItemB] = useState<{ item: PlaylistItem | null, url: string }>({ item: null, url: '' });
@@ -216,7 +217,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
             playsInline
             muted
             className="w-full h-full object-contain"
-            onEnded={visible ? handleVideoEnded : undefined}
+            onEnded={handleVideoEnded}
           />
         ) : (
           <img
