@@ -149,18 +149,19 @@ export class PlayerEngine {
     // 2. Identify active schedules
     const activeSchedules = (this.schedules || []).filter(s => {
       const days = (s.days || []).map(Number);
+      const isDayMatch = days.includes(currentDay);
       const start = this.toMinutes(s.startTime);
       const end = this.toMinutes(s.endTime);
       
-      const matchesDay = days.includes(currentDay);
-      let matchesTime = false;
+      let isTimeMatch = false;
       if (end < start) {
-        matchesTime = currentMinutes >= start || currentMinutes < end;
+        isTimeMatch = currentMinutes >= start || currentMinutes < end;
       } else {
-        matchesTime = currentMinutes >= start && currentMinutes < end;
+        isTimeMatch = currentMinutes >= start && currentMinutes < end;
       }
 
-      return matchesDay && matchesTime;
+      console.log(`[player] Engine Eval Sched ${s.id}: dayMatch=${isDayMatch}(${days} vs ${currentDay}), timeMatch=${isTimeMatch}(${start}-${end} vs ${currentMinutes})`);
+      return isDayMatch && isTimeMatch;
     });
 
     // Strategy 1: Active Schedule

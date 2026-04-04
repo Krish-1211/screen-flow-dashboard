@@ -192,7 +192,8 @@ export default function DisplayPlayerPage() {
     }));
 
     const activeSchedules = safeSchedules.filter(s => {
-      if (!s.days.includes(currentDay)) return false;
+      const days = (s.days || []).map(Number);
+      const isDayMatch = days.includes(currentDay);
       
       const toMin = (t: string) => {
         const [h, m] = t.split(':').map(Number);
@@ -202,10 +203,18 @@ export default function DisplayPlayerPage() {
       const start = toMin(s.startTime);
       const end = toMin(s.endTime);
       
+      let isTimeMatch = false;
       if (end < start) {
-        return currentMinutes >= start || currentMinutes <= end;
+        // Overnight case
+        isTimeMatch = currentMinutes >= start || currentMinutes < end;
+      } else {
+        // Normal case
+        isTimeMatch = currentMinutes >= start && currentMinutes < end;
       }
-      return currentMinutes >= start && currentMinutes <= end;
+
+      console.log(`[player] Eval Sched ${s.id}: dayMatch=${isDayMatch}(${days} vs ${currentDay}), timeMatch=${isTimeMatch}(${start}-${end} vs ${currentMinutes})`);
+      
+      return isDayMatch && isTimeMatch;
     });
 
     console.log("Active Schedules:", activeSchedules);
