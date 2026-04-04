@@ -177,6 +177,11 @@ export class PlayerEngine {
 
     console.log("Active Schedules:", activeSchedules);
 
+    if (!this.playlists || this.playlists.size === 0) {
+      console.error("No playlists available in library → triggering hard fallback");
+      return null; // Let the fallback chain handle the safe black gap
+    }
+
     let targetPlaylistId: string | null = null;
 
     if (activeSchedules.length > 0) {
@@ -184,42 +189,36 @@ export class PlayerEngine {
       targetPlaylistId = String(activeSchedules[0].playlistId);
     } else if (this.defaultPlaylistId && this.playlists.has(String(this.defaultPlaylistId))) {
       targetPlaylistId = String(this.defaultPlaylistId);
-    } else if (this.playlists.size > 0) {
-      // Phase 3: Force safe fallback to first available playlist
+    } else {
+      // Phase 5: Hard Fallback to first available if all else fails
       const firstAvailable = Array.from(this.playlists.keys())[0];
       console.warn("No active schedule or valid default. Falling back to first available playlist:", firstAvailable);
       targetPlaylistId = firstAvailable;
     }
 
-    console.log("Target Playlist ID:", targetPlaylistId);
-
-    // Phase 5: Structured Logging
-    this.log({
-      type: 'schedule_evaluation',
-      currentTime: now.toLocaleTimeString(),
-      currentMinutes,
-      activeSchedules: activeSchedules.map(s => ({ id: s.id, playlistId: s.playlistId })),
-      selectedPlaylist: targetPlaylistId,
-      nextChange: this.getNextScheduleChange()?.toLocaleTimeString() || 'none today'
+    console.log({
+      schedules: this.schedules,
+      playlists: Array.from(this.playlists.entries()),
+      targetPlaylistId
     });
 
     let playlist = targetPlaylistId ? this.playlists.get(targetPlaylistId) : null;
 
     if (!playlist) {
-      if (targetPlaylistId && !['null', 'undefined'].includes(targetPlaylistId)) {
-        this.log({ type: 'error', message: `Target playlist ${targetPlaylistId} not found in library` });
+      console.error("Playlist not found for target:", targetPlaylistId);
+      
+      // Secondary fallback chain
+      if (this.defaultPlaylistId && this.playlists.has(String(this.defaultPlaylistId))) {
+        playlist = this.playlists.get(String(this.defaultPlaylistId))!;
+      } else {
+        const firstId = Array.from(this.playlists.keys())[0];
+        playlist = this.playlists.get(firstId) || null;
       }
 
-      // Fallback chain
-      if (targetPlaylistId !== String(this.defaultPlaylistId)) {
-        playlist = this.defaultPlaylistId ? this.playlists.get(String(this.defaultPlaylistId)) : null;
-        if (playlist) return playlist;
-      }
-
-      if (this.playlist.length > 0) return null;
+      if (playlist) return playlist;
 
       // Phase 1: Pure UI Fallback (Solid Black Gap)
-      this.log({ type: 'fallback', message: 'Using safe system fallback' });
+      this.log({ type: 'fallback', message: 'Using safe system fallback (no playlists matched)' });
       return {
         id: 'fallback-safe',
         name: 'Safe Fallback',

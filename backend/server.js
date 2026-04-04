@@ -886,14 +886,16 @@ app.get('/screens/player', async (req, res) => {
         return { ...pl, items };
     });
 
-    const payload = {
-        screen: {
-            id: screen.id,
-            name: screen.name,
-            defaultPlaylistId: screen.playlist_id
-        },
-        playlists: enrichedPlaylists,
-        schedules: relevantSchedules.map(s => {
+    // Phase 2: Filter schedules to ensure data integrity
+    const validSchedules = relevantSchedules
+        .filter(s => {
+            const hasPlaylist = enrichedPlaylists.some(pl => String(pl.id) === String(s.playlist_id));
+            if (!hasPlaylist) {
+                console.warn(`Schedule ${s.id} removed: Playlist ${s.playlist_id} not found/fetchable`);
+            }
+            return hasPlaylist;
+        })
+        .map(s => {
             // Phase 10: Normalize days to numeric array
             let days = s.days_of_week;
             if (days === undefined || days === null) {
@@ -908,7 +910,16 @@ app.get('/screens/player', async (req, res) => {
                 endTime: s.end_time || "23:59",
                 days: days.map(Number)
             };
-        })
+        });
+
+    const payload = {
+        screen: {
+            id: screen.id,
+            name: screen.name,
+            defaultPlaylistId: screen.playlist_id
+        },
+        playlists: enrichedPlaylists,
+        schedules: validSchedules
     };
 
     console.log("===== PLAYER CONTEXT RESPONSE =====");
