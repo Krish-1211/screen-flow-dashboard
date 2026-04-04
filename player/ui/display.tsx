@@ -36,6 +36,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   const watchdogTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRenderAtRef = useRef<number>(Date.now());
   const currentItemRef = useRef<PlaylistItem | null>(null);
+  const loopLockRef = useRef<boolean>(false); // 🧠 Protects manual UI transitions
   
   const videoRefA = useRef<HTMLVideoElement>(null);
   const videoRefB = useRef<HTMLVideoElement>(null);
@@ -199,12 +200,18 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     stateMachine.transition('STARTUP');
 
     const engine = new PlayerEngine(async (item) => {
+      // Step 0: Guard against engine override during loop transitions
+      if (loopLockRef.current) {
+        console.log("[player] Engine update BLOCKED (loop lock active)");
+        return;
+      }
+
       // Step: Avoid caching/preloading for system gap
       let url = '';
       if (item.media?.type !== 'system_gap') {
         url = await mediaCache.getMediaSource(item.media?.url || '');
       } else {
-        url = item.media?.url || '/black-screen.svg';
+        url = item.media?.url || '/black-screen.png';
       }
       
       const currentItem = (activeLayer === 'A' ? itemA : itemB).item;
@@ -339,9 +346,12 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
       const originalItem = playlistItems[0];
       const originalUrl = (activeLayer === 'A' ? itemA : itemB).url;
 
-      console.log("[player] single video → black transition");
+      console.log("[player] single video → black transition (locked)");
 
-      // 1. Show black screen buffer
+      // 1. Activate lock to block engine overrides
+      loopLockRef.current = true;
+
+      // 2. Show black screen buffer
       const blackItem: PlaylistItem = {
         id: "black-buffer",
         mediaId: "black-buffer",
@@ -358,11 +368,13 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
       if (activeLayer === 'A') setItemA({ item: blackItem, url: "/black-screen.png" });
       else setItemB({ item: blackItem, url: "/black-screen.png" });
 
-      // 2. Restart original video after 1s delay
+      // 3. Restart original video after delay
       setTimeout(() => {
         if (activeLayer === 'A') setItemA({ item: originalItem, url: originalUrl });
         else setItemB({ item: originalItem, url: originalUrl });
-        console.log("[player] video loop restarted");
+        
+        loopLockRef.current = false; // Release lock after video is back
+        console.log("[player] video loop restarted (lock released)");
       }, 1000);
       
       return;
