@@ -193,7 +193,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     if (!data.item) return null;
 
     const isVideo = data.item.media?.type === "video";
-    const isGap = data.item.media?.type === "system_gap";
+    const isGap = data.item.media?.type === "system_gap" && playlistItems.length === 0;
     const visible = activeLayer === layer;
 
     return (
