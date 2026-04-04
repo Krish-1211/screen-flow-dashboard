@@ -340,30 +340,23 @@ export default function DisplayPlayerPage() {
   const advanceMedia = useCallback(() => {
     setMediaError(false);
     isVideoPlayingRef.current = false;
+    
+    // --- Phase 4: Smooth transition (Black Frame transition) ---
+    // Instead of switching instantly, we fade OUT then switch INDEX then fade IN.
     setFadeState('out');
 
     setTimeout(() => {
-      const pending = pendingPlaylistRef.current;
-      if (pending) {
-        pendingPlaylistRef.current = null;
-        setPlaylist(currentPl => {
-            if (pending.id !== currentPl?.id) {
-                setCurrentIndex(0);
-                return pending;
-            }
-            setCurrentIndex((prev) => (prev + 1) % (pending.items?.length || 1));
-            return pending;
-        });
-      } else {
-        setPlaylist(currentPl => {
-            if (currentPl?.items?.length) {
-                setCurrentIndex((prev) => (prev + 1) % currentPl.items.length);
-            }
-            return currentPl;
-        });
-      }
+      setPlaylist(currentPl => {
+        if (!currentPl?.items?.length) return currentPl;
+        
+        // Single item? No index change.
+        if (currentPl.items.length === 1) return currentPl;
+
+        setCurrentIndex((prev) => (prev + 1) % currentPl.items.length);
+        return currentPl;
+      });
       setFadeState('in');
-    }, 200);
+    }, 300); // 300ms black buffer
   }, []);
 
   useEffect(() => {
@@ -373,28 +366,31 @@ export default function DisplayPlayerPage() {
     const currentItem = playlist.items[currentIndex];
     const mediaType = currentItem?.media?.type;
 
-    // --- ANTI-FLICKER: Single Item Loop Prevention ---
+    // --- Phase 1: Static Preservation (Images/Gap) ---
     if (playlist.items.length === 1) {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
       if (mediaType === 'video' && videoRef.current) {
-        videoRef.current.loop = true;
-        isVideoPlayingRef.current = true;
-        console.log("[player] Single video -> looping natively");
-        return;
+         videoRef.current.loop = true;
+         videoRef.current.play().catch(() => {});
       }
-      if (mediaType === 'image' || mediaType === 'system_gap') {
-        console.log("[player] Single static item -> staying on screen");
-        return; 
-      }
+      console.log("[player] SINGLE ITEM STABLE STATE");
+      return;
     }
 
+    // --- Phase 2: Playback Transition Management ---
     if (mediaType === 'video') {
       isVideoPlayingRef.current = true;
       preloadNextItem(playlist, currentIndex);
-      return;
+      return; 
     }
 
     const duration = currentItem.duration || 10;
     preloadNextItem(playlist, currentIndex);
+    
+    if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(advanceMedia, duration * 1000);
 
     return () => {
@@ -529,7 +525,17 @@ export default function DisplayPlayerPage() {
               loop={playlist.items.length === 1}
               preload="auto"
               onError={handleMediaError}
-              onEnded={advanceMedia}
+              onEnded={() => {
+                if (playlist.items.length === 1) {
+                   console.log("[player] Single item video loop restart");
+                   if (videoRef.current) {
+                     videoRef.current.currentTime = 0;
+                     videoRef.current.play().catch(() => {});
+                   }
+                } else {
+                   advanceMedia();
+                }
+              }}
             />
           ) : (
             <img
