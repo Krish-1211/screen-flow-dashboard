@@ -380,11 +380,17 @@ export default function DisplayPlayerPage() {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      if (mediaType === 'video' && videoRef.current) {
-         videoRef.current.loop = true;
+      
+      // Images and Gaps stay static (no timer needed)
+      if (mediaType !== 'video') {
+        console.log("[player] SINGLE STATIC ITEM STABLE STATE");
+        return;
+      }
+      
+      // Video: Just ensure it plays once; looping is handled by onEnded
+      if (videoRef.current && videoRef.current.paused) {
          videoRef.current.play().catch(() => {});
       }
-      console.log("[player] SINGLE ITEM STABLE STATE");
       return;
     }
 
@@ -551,11 +557,12 @@ export default function DisplayPlayerPage() {
               onError={handleMediaError}
               onEnded={() => {
                 if (playlist.items.length === 1) {
-                   console.log("[player] Manual 300ms black-frame loop initiated");
+                   console.log("[player] Single video end -> Transitioning to black for 300ms");
                    setIsTransitioning(true);
                    
                    if (videoRef.current) {
                      videoRef.current.currentTime = 0;
+                     videoRef.current.pause(); // Stop it during blackout
                    }
                    
                    setTimeout(() => {
