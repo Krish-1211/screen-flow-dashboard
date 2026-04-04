@@ -373,6 +373,20 @@ export default function DisplayPlayerPage() {
     const currentItem = playlist.items[currentIndex];
     const mediaType = currentItem?.media?.type;
 
+    // --- ANTI-FLICKER: Single Item Loop Prevention ---
+    if (playlist.items.length === 1) {
+      if (mediaType === 'video' && videoRef.current) {
+        videoRef.current.loop = true;
+        isVideoPlayingRef.current = true;
+        console.log("[player] Single video -> looping natively");
+        return;
+      }
+      if (mediaType === 'image' || mediaType === 'system_gap') {
+        console.log("[player] Single static item -> staying on screen");
+        return; 
+      }
+    }
+
     if (mediaType === 'video') {
       isVideoPlayingRef.current = true;
       preloadNextItem(playlist, currentIndex);
@@ -505,20 +519,21 @@ export default function DisplayPlayerPage() {
             />
           ) : isVideo ? (
             <video
-              key={`${currentItem.id}-${mediaUrl}-${currentIndex}`} 
+              key={playlist.items.length === 1 ? 'static-video' : `${currentItem.id}-${mediaUrl}-${currentIndex}`} 
               ref={videoRef}
               src={mediaUrl}
               className="w-full h-full object-contain"
               autoPlay
               playsInline
               muted={muted}
+              loop={playlist.items.length === 1}
               preload="auto"
               onError={handleMediaError}
               onEnded={advanceMedia}
             />
           ) : (
             <img
-              key={currentItem.id}
+              key={playlist.items.length === 1 ? 'static-img' : currentItem.id}
               src={mediaUrl}
               className="w-full h-full object-contain"
               alt="Content"
