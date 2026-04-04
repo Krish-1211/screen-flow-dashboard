@@ -217,7 +217,7 @@ export class PlayerEngine {
           id: 'safe-placeholder',
           name: 'Safe Fallback',
           type: 'system_gap',
-          url: ''
+          url: '/black-screen.png'
         }
       }]
     };
