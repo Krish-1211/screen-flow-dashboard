@@ -233,6 +233,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     <div className="fixed inset-0 bg-black">
       {renderLayer('A')}
       {renderLayer('B')}
+      <div className="fixed bottom-4 right-4 text-white/30 text-xs z-50">v2.0.4 - FIXED</div>
     </div>
   );
 };
