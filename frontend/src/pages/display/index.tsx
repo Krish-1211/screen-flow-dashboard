@@ -76,7 +76,7 @@ export default function DisplayPlayerPage() {
   }, []);
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isLoopingDelay, setIsLoopingDelay] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [connected, setConnected] = useState(navigator.onLine);
   const [context, setContext] = useState<PlayerContext | null>(null);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
@@ -499,8 +499,8 @@ export default function DisplayPlayerPage() {
             transition: 'opacity 200ms ease'
           }}
         >
-          {isLoopingDelay ? (
-            <div className="w-full h-full bg-black" />
+          {isTransitioning ? (
+             <div className="w-full h-full bg-black transition-all" />
           ) : isGap ? (
             <div className="w-full h-full bg-black flex flex-col items-center justify-center p-20 select-none">
               <div className="relative">
@@ -551,19 +551,19 @@ export default function DisplayPlayerPage() {
               onError={handleMediaError}
               onEnded={() => {
                 if (playlist.items.length === 1) {
-                   console.log("[player] Manual 500ms black-frame loop initiated");
-                   setIsLoopingDelay(true);
+                   console.log("[player] Manual 300ms black-frame loop initiated");
+                   setIsTransitioning(true);
+                   
                    if (videoRef.current) {
                      videoRef.current.currentTime = 0;
                    }
+                   
                    setTimeout(() => {
-                     setIsLoopingDelay(false);
-                     // Add a check to see if the element still exists
-                     // before playing to avoid React errors.
+                     setIsTransitioning(false);
                      if (videoRef.current) {
                         videoRef.current.play().catch(() => {});
                      }
-                   }, 500); 
+                   }, 300); 
                 } else {
                    advanceMedia();
                 }
