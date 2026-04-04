@@ -5,6 +5,8 @@ import { screensApi } from "@/services/api/screens";
 import type { Playlist, PlayerContext, Schedule } from "@/types";
 
 export default function DisplayPlayerPage() {
+  console.log("PLAYER REAL BUILD v3");
+
   const [searchParams, setSearchParams] = useSearchParams();
   const urlDeviceId = searchParams.get("device_id");
   
@@ -32,7 +34,6 @@ export default function DisplayPlayerPage() {
       const newId = crypto.randomUUID();
       localStorage.setItem("sf_device_id", newId);
       
-      // Force URL update (keep name if provided)
       const targetUrl = urlName 
         ? `/display?device_id=${newId}&name=${urlName}` 
         : `/display?device_id=${newId}`;
@@ -44,7 +45,6 @@ export default function DisplayPlayerPage() {
     console.log("Device ID:", finalId);
     setDeviceId(finalId);
 
-    // ── Step 6: Prevent duplicate screen registration ──
     const register = async () => {
       if (localStorage.getItem("sf_registered") === "true") return;
 
@@ -54,12 +54,11 @@ export default function DisplayPlayerPage() {
       try {
         await screensApi.register({
           deviceId: finalId,
-          name: urlName || "" // Do NOT auto-generate "Screen-..." names
+          name: urlName || "" 
         });
         localStorage.setItem("sf_registered", "true");
         console.log("Screen registration check completed:", finalId);
       } catch (err) {
-        // If it fails with 409 or similar, it might already exist
         console.warn("Auto-registration check:", err);
       }
     };
@@ -82,7 +81,16 @@ export default function DisplayPlayerPage() {
   const preloadedNextRef = useRef<HTMLImageElement | HTMLVideoElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // ── Disable right-click & scrollbar ──
+  // ── Diagnostic Visibility ──
+  useEffect(() => {
+    (window as any).playerState = {
+      context,
+      playlist,
+      deviceId,
+      currentIndex
+    };
+  }, [context, playlist, deviceId, currentIndex]);
+
   useEffect(() => {
     const handleContext = (e: Event) => e.preventDefault();
     document.addEventListener("contextmenu", handleContext);
@@ -94,7 +102,6 @@ export default function DisplayPlayerPage() {
     };
   }, []);
 
-  // ── Preload the NEXT item in background ──
   const preloadNextItem = useCallback((pl: Playlist, idx: number) => {
     if (!pl?.items?.length) return;
     const nextIdx = (idx + 1) % pl.items.length;
@@ -114,7 +121,6 @@ export default function DisplayPlayerPage() {
     }
   }, []);
 
-  // ── Heartbeat (unchanged) ──
   useEffect(() => {
     if (!deviceId) return;
     let interval: any;
@@ -165,11 +171,19 @@ export default function DisplayPlayerPage() {
 
   const evaluateActivePlaylist = useCallback((ctx: PlayerContext): Playlist => {
     const now = new Date();
-    // 0 = Monday ... 6 = Sunday (Matches JS getDay() shift if needed, but signage typically 0=Mon)
     const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-    const activeSchedules = ctx.schedules.filter(s => {
+    console.log("===== EVALUATING PLAYLIST =====");
+    console.log("Current Time:", localTimeStrShort(now));
+    
+    // Support both ID naming conventions
+    const safeSchedules = (ctx.schedules || []).map(s => ({
+      ...s,
+      playlistId: String((s as any).playlistId || (s as any).playlist_id)
+    }));
+
+    const activeSchedules = safeSchedules.filter(s => {
       if (!s.days.includes(currentDay)) return false;
       
       const toMin = (t: string) => {
@@ -180,40 +194,55 @@ export default function DisplayPlayerPage() {
       const start = toMin(s.startTime);
       const end = toMin(s.endTime);
       
-      // Handle Overnight (e.g. 22:00 to 02:00)
       if (end < start) {
         return currentMinutes >= start || currentMinutes <= end;
       }
-      
-      // Normal Range (Inclusive as requested)
       return currentMinutes >= start && currentMinutes <= end;
     });
 
-    let targetId: string | null = null;
+    console.log("Active Schedules:", activeSchedules);
 
+    let targetId: string | null = null;
+    let strategy = "none";
+
+    // 🏆 PRIORITY 1: SCHEDULE
     if (activeSchedules.length > 0) {
-      // Deterministic Tie-breaking: Latest Start Time Wins, then ID
       activeSchedules.sort((a, b) => {
         if (a.startTime !== b.startTime) return b.startTime.localeCompare(a.startTime);
         return String(b.id).localeCompare(String(a.id));
       });
       targetId = String(activeSchedules[0].playlistId);
-    } else {
-      // Default Fallback
-      targetId = ctx.screen.defaultPlaylistId ? String(ctx.screen.defaultPlaylistId) : null;
+      strategy = "schedule";
+    } 
+    // 🥈 PRIORITY 2: SCREEN DEFAULT
+    else if (ctx.screen.defaultPlaylistId || (ctx.screen as any).playlist_id) {
+      targetId = String(ctx.screen.defaultPlaylistId || (ctx.screen as any).playlist_id);
+      strategy = "default";
     }
 
-    const found = ctx.playlists.find(p => String(p.id) === targetId && p.items?.length);
-    
-    if (found) {
-      lastPlaylistRef.current = found;
-      return found;
+    const findPl = (id: string | null) => {
+      if (!id) return null;
+      return ctx.playlists.find(p => String(p.id) === id && p.items?.length > 0);
+    };
+
+    let resolved = findPl(targetId);
+
+    // 🥉 PRIORITY 3: LIBRARY FALLBACK (FIRST AVAILABLE)
+    if (!resolved && ctx.playlists?.length > 0) {
+      resolved = ctx.playlists.find(p => p.items?.length > 0);
+      if (resolved) {
+        console.warn(`[player] Strategy '${strategy}' failed to resolve ${targetId}. Falling back to library first-available: ${resolved.id}`);
+        strategy = "library-fallback";
+      }
     }
 
-    // Secondary Fallback: Last Played
-    if (lastPlaylistRef.current) return lastPlaylistRef.current;
+    if (resolved) {
+      console.log(`[player] RESOLVED: ${resolved.id} (${strategy})`);
+      lastPlaylistRef.current = resolved;
+      return resolved;
+    }
 
-    // Final Fallback: Safe Placeholder
+    console.error("[player] CRITICAL: No playlist resolved. Triggering safe system gap.");
     return SAFE_PLACEHOLDER();
   }, [SAFE_PLACEHOLDER]);
 
@@ -233,14 +262,13 @@ export default function DisplayPlayerPage() {
         setContext(data);
         const activePl = evaluateActivePlaylist(data);
 
-        // Functional updates to avoid dependency on 'playlist'
         setPlaylist(currentPl => {
             if (activePl?.id !== currentPl?.id) {
                 console.info(`[player] sync flip: ${currentPl?.id} -> ${activePl?.id}`);
                 setCurrentIndex(0);
                 return activePl;
             }
-            return activePl; // Update items if same ID
+            return activePl; 
         });
       } else {
         setPlaylist(null);
@@ -262,7 +290,6 @@ export default function DisplayPlayerPage() {
     }
     
     loadPlaylist(true);
-    
     const pollInterval = setInterval(() => loadPlaylist(false), 15000);
 
     const watchdog = setInterval(() => {
@@ -285,10 +312,8 @@ export default function DisplayPlayerPage() {
     };
   }, [loadPlaylist, deviceId]);
 
-  // ── Local Schedule Watcher (Watches context & clock) ──
   useEffect(() => {
     if (!context) return;
-    
     const interval = setInterval(() => {
         const activePl = evaluateActivePlaylist(context);
         setPlaylist(currentPl => {
@@ -304,7 +329,6 @@ export default function DisplayPlayerPage() {
     return () => clearInterval(interval);
   }, [context, evaluateActivePlaylist]);
 
-  // ── Advance to next item with crossfade ──
   const advanceMedia = useCallback(() => {
     setMediaError(false);
     isVideoPlayingRef.current = false;
@@ -334,7 +358,6 @@ export default function DisplayPlayerPage() {
     }, 200);
   }, []);
 
-  // ── Timer logic ──
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (!playlist?.items?.length) return;
@@ -389,10 +412,10 @@ export default function DisplayPlayerPage() {
     );
   }
 
+  const now = new Date();
+  const localTimeStrShort = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
   if (!playlist || !playlist.items || playlist.items.length === 0) {
-    const now = new Date();
-    const localTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-    
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-6 text-center">
         <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
@@ -400,7 +423,7 @@ export default function DisplayPlayerPage() {
         <p className="mt-2 text-gray-400 max-w-md">Please assign a playlist to this screen from the dashboard to begin playback.</p>
         
         <div className="mt-8 flex flex-col items-center gap-2">
-          <span className="text-4xl font-bold font-mono tracking-tighter text-gray-100">{localTimeStr}</span>
+          <span className="text-4xl font-bold font-mono tracking-tighter text-gray-100">{localTimeStrShort(now)}</span>
           <span className="text-[10px] text-gray-600 uppercase tracking-widest">Device Local Time</span>
         </div>
 
