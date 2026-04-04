@@ -828,7 +828,11 @@ app.get('/screens/player', async (req, res) => {
 
     const relevantSchedules = (allSchedules || [])
         .map(s => s.data)
-        .filter(s => String(s.screen_id) === String(screen.id) && s.active !== false);
+        .filter(s => 
+            String(s.screen_id) === String(screen.id) && 
+            s.active !== false &&
+            s.playlist_id // Phase 10: Ensure playlistId exists
+        );
 
     // 3. Fetch all playlists involved (default + scheduled)
     const playlistIds = [
@@ -890,13 +894,22 @@ app.get('/screens/player', async (req, res) => {
             defaultPlaylistId: screen.playlist_id
         },
         playlists: enrichedPlaylists,
-        schedules: relevantSchedules.map(s => ({
-            id: s.id,
-            playlistId: s.playlist_id,
-            startTime: s.start_time,
-            endTime: s.end_time,
-            days: s.days_of_week || (s.day_of_week !== undefined ? [s.day_of_week] : [0,1,2,3,4,5,6])
-        }))
+        schedules: relevantSchedules.map(s => {
+            // Phase 10: Normalize days to numeric array
+            let days = s.days_of_week;
+            if (days === undefined || days === null) {
+                days = s.day_of_week !== undefined ? [s.day_of_week] : [0, 1, 2, 3, 4, 5, 6];
+            }
+            if (!Array.isArray(days)) days = [days];
+
+            return {
+                id: s.id,
+                playlistId: String(s.playlist_id),
+                startTime: s.start_time || "00:00",
+                endTime: s.end_time || "23:59",
+                days: days.map(Number)
+            };
+        })
     });
 });
 
