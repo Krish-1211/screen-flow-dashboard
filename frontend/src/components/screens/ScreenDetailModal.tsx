@@ -73,13 +73,25 @@ export function ScreenDetailModal({ screen, open, onOpenChange }: ScreenDetailMo
 
     const updateMutation = useMutation({
         mutationFn: ({ id, data }: { id: string, data: Partial<Schedule> }) => schedulesApi.update(id, data),
-        onSuccess: () => {
+        onMutate: async (variables) => {
+            await queryClient.cancelQueries({ queryKey: ['schedules', screen.id] });
+            const previousSchedules = queryClient.getQueryData(['schedules', screen.id]);
+            
+            queryClient.setQueryData(['schedules', screen.id], (old: any[] = []) => 
+                old.map(s => s.id === variables.id ? { ...s, ...variables.data } : s)
+            );
+
+            return { previousSchedules };
+        },
+        onError: (err: any, variables, context) => {
+            if (context?.previousSchedules) {
+                queryClient.setQueryData(['schedules', screen.id], context.previousSchedules);
+            }
+            toast.error(err.response?.data?.detail || "Failed to update schedule");
+        },
+        onSettled: () => {
             queryClient.invalidateQueries({ queryKey: ['schedules', screen.id] });
             queryClient.invalidateQueries({ queryKey: ['screens'] });
-            toast.success("Schedule updated");
-        },
-        onError: (err: any) => {
-            toast.error(err.response?.data?.detail || "Failed to update schedule");
         }
     });
 

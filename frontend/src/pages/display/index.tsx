@@ -68,6 +68,13 @@ export default function DisplayPlayerPage() {
     register();
   }, []);
 
+  // ── Step 1.5: Ticker for Clock ──
+  const [currentTime, setCurrentTime] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [connected, setConnected] = useState(navigator.onLine);
   const [context, setContext] = useState<PlayerContext | null>(null);
@@ -492,7 +499,33 @@ export default function DisplayPlayerPage() {
           }}
         >
           {isGap ? (
-            <div className="w-full h-full bg-black shadow-[inset_0_0_100px_rgba(0,0,0,1)]" />
+            <div className="w-full h-full bg-black flex flex-col items-center justify-center p-20 select-none">
+              <div className="relative">
+                {/* 🧠 Premium Glow behind clock */}
+                <div className="absolute inset-0 bg-primary/20 blur-[100px] rounded-full scale-150 animate-pulse" />
+                
+                <div className="relative text-center">
+                  <div className="text-[14vw] font-black text-white tracking-tighter drop-shadow-[0_0_40px_rgba(255,255,255,0.3)] leading-none">
+                    {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  </div>
+                  
+                  <div className="flex items-center justify-center gap-6 mt-4">
+                    <div className="h-[2px] w-20 bg-gradient-to-r from-transparent to-white/20" />
+                    <div className="text-[2vw] font-medium text-white/30 uppercase tracking-[0.5em]">
+                      System Idle
+                    </div>
+                    <div className="h-[2px] w-20 bg-gradient-to-l from-transparent to-white/20" />
+                  </div>
+                </div>
+              </div>
+
+              {/* 🧠 Subtle date badge at the bottom */}
+              <div className="absolute bottom-16 px-6 py-2 rounded-full border border-white/10 bg-white/5 backdrop-blur-sm">
+                <span className="text-[1vw] text-white/60 font-medium uppercase tracking-widest">
+                  {currentTime.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}
+                </span>
+              </div>
+            </div>
           ) : isYoutube ? (
             <iframe
               key={currentItem.id}
