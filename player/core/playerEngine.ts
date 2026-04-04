@@ -33,11 +33,12 @@ export class PlayerEngine {
     // Ensure all critical data is assigned
     this.schedules = (context.schedules || []).map(s => ({
       ...s,
-      playlistId: String((s as any).playlistId || (s as any).playlist_id)
+      playlistId: String(s.playlistId || s.playlist_id)
     }));
     
     // Support both naming conventions from backend
-    this.defaultPlaylistId = context.screen?.defaultPlaylistId || context.screen?.playlist_id;
+    const rawDefault = context.screen?.defaultPlaylistId || context.screen?.playlist_id;
+    this.defaultPlaylistId = rawDefault ? String(rawDefault) : null;
     
     const newPlaylistMap = new Map<string, Playlist>();
     (context.playlists || []).forEach(pl => newPlaylistMap.set(String(pl.id), pl));

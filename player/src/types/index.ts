@@ -23,18 +23,20 @@ export interface Playlist {
   version?: string;
 }
 export interface Schedule {
-  id: string;
-  playlistId: string;
-  startTime: string; // HH:mm:ss
-  endTime: string;   // HH:mm:ss
+  id: string | number;
+  playlistId?: string | number;
+  playlist_id?: string | number;
+  startTime: string; // HH:mm
+  endTime: string;   // HH:mm
   days: number[];    // 0=Mon... 6=Sun
 }
 
 export interface PlayerContext {
   screen: {
-    id: string;
+    id: string | number;
     name: string;
-    defaultPlaylistId: string;
+    defaultPlaylistId?: string | number | null;
+    playlist_id?: string | number | null;
   };
   playlists: Playlist[];
   schedules: Schedule[];

@@ -15,8 +15,10 @@ export interface Space {
 export interface Screen {
     id: number | string;
     name: string;
-    status: 'online' | 'offline';
-    playlistId?: number;
+    status: 'online' | 'offline' | string;
+    playlistId?: number | string;
+    playlist_id?: number | string;
+    defaultPlaylistId?: string | number | null;
     lastPing?: string;
     device_id?: string;
     spaceId?: string;
@@ -53,10 +55,12 @@ export interface Playlist {
     version?: string;
 }
 export interface Schedule {
-  id: string;
+  id: string | number;
   name: string;
-  screenId: string;
-  playlistId: string;
+  screenId?: string | number;
+  screen_id?: string | number;
+  playlistId?: string | number;
+  playlist_id?: string | number;
   startTime: string;
   endTime: string;
   days: number[];
