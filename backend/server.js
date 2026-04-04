@@ -792,6 +792,28 @@ app.post('/schedules', async (req, res) => {
     res.json(schedule.data);
 });
 
+app.put('/schedules/:id', async (req, res) => {
+    const { id } = req.params;
+    const schedule = {
+        client_id: CLIENT_ID,
+        data: {
+            id,
+            ...req.body
+        }
+    };
+
+    const { error } = await supabase
+        .from('schedules')
+        .update(schedule)
+        .eq('id', id)
+        .eq('client_id', CLIENT_ID);
+
+    if (error) return res.status(500).json({ error });
+
+    io.emit('playlist-updated');
+    res.json(schedule.data);
+});
+
 app.delete('/schedules/:id', async (req, res) => {
     const { error } = await supabase
         .from('schedules')

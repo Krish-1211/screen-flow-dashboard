@@ -75,11 +75,24 @@ export default function SchedulesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules'] });
       setOpen(false);
-      toast.success(editingGroup ? "Schedule updated" : "Schedule created");
+      toast.success("Schedule created");
       resetForm();
     },
     onError: (err: any) => {
       toast.error(err.response?.data?.detail || "Failed to create schedule");
+    }
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string, data: any }) => schedulesApi.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schedules'] });
+      setOpen(false);
+      toast.success("Schedule updated");
+      resetForm();
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.detail || "Failed to update schedule");
     }
   });
 
@@ -96,10 +109,10 @@ export default function SchedulesPage() {
     
     try {
         if (editingGroup) {
-            await createMutation.mutateAsync({
-                ...form,
-                id: editingGroup.id
-            } as any);
+            await updateMutation.mutateAsync({
+                id: editingGroup.id,
+                data: form
+            });
         } else {
             await createMutation.mutateAsync(form as any);
         }
