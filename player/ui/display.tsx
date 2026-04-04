@@ -21,9 +21,19 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
 
   const engineRef = useRef<PlayerEngine | null>(null);
   const loopLockRef = useRef(false);
-
   const videoRefA = useRef<HTMLVideoElement>(null);
   const videoRefB = useRef<HTMLVideoElement>(null);
+
+  // 🧠 Mirror Refs to solve stale closures in async callbacks
+  const activeLayerRef = useRef(activeLayer);
+  const itemARef = useRef(itemA);
+  const itemBRef = useRef(itemB);
+  const playlistItemsRef = useRef(playlistItems);
+
+  useEffect(() => { activeLayerRef.current = activeLayer; }, [activeLayer]);
+  useEffect(() => { itemARef.current = itemA; }, [itemA]);
+  useEffect(() => { itemBRef.current = itemB; }, [itemB]);
+  useEffect(() => { playlistItemsRef.current = playlistItems; }, [playlistItems]);
 
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -61,13 +71,13 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
         url = "/black-screen.png";
       }
 
-      const currentItem = (activeLayer === 'A' ? itemA : itemB).item;
+      const currentItem = (activeLayerRef.current === 'A' ? itemARef.current : itemBRef.current).item;
 
-      // 🧠 HARD LOOP DETECTION
+      // 🧠 HARD LOOP DETECTION (USING REFS)
       if (currentItem?.id === item.id) {
-        console.log("[player] HARD LOOP → restart video");
+        console.log("[player] HARD LOOP (Ref-tracked) → restart video");
 
-        const video = activeLayer === 'A' ? videoRefA.current : videoRefB.current;
+        const video = activeLayerRef.current === 'A' ? videoRefA.current : videoRefB.current;
         if (item.media?.type === "video" && video) {
           void playVideoSafe(video);
         }
@@ -115,12 +125,13 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     const engine = engineRef.current;
     if (!engine) return;
 
-    // 🔥 SINGLE VIDEO LOOP FIX (FINAL)
-    if (playlistItems.length === 1) {
+    const currentPlaylist = playlistItemsRef.current;
 
-      const lockedLayer = activeLayer;
-      const originalItem = playlistItems[0];
-      const originalUrl = (lockedLayer === 'A' ? itemA : itemB).url;
+    // 🔥 SINGLE VIDEO LOOP FIX (FINAL - USING REFS)
+    if (currentPlaylist.length === 1) {
+      const lockedLayer = activeLayerRef.current;
+      const originalItem = currentPlaylist[0];
+      const originalUrl = (lockedLayer === 'A' ? itemARef.current : itemBRef.current).url;
 
       loopLockRef.current = true;
 
