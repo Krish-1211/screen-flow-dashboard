@@ -21,6 +21,7 @@ export class PlayerEngine {
 
   constructor(onRender: (item: PlaylistItem) => void) {
     this.onRender = onRender;
+    // Initial content evaluation
     this.checkSchedule();
   }
 
@@ -323,10 +324,18 @@ export class PlayerEngine {
   }
 
   public stopPlaybackLoop() {
+    console.log("[player] Engine STOPPING - clearing all timers and abandoning active loop");
     this.shouldRun = false;
     this.loopToken += 1;
+    
+    // Clear playback timers
     this.clearPendingWait();
-    this.wakeLoop();
+    
+    // Also clear the background schedule survey while stopped
+    if (this.scheduleCheckTimer) {
+      clearTimeout(this.scheduleCheckTimer);
+      this.scheduleCheckTimer = null;
+    }
   }
 
   public getPlaylistItems() {
@@ -377,5 +386,6 @@ export class PlayerEngine {
       clearTimeout(this.pendingTimeout);
       this.pendingTimeout = null;
     }
+    this.pendingAdvanceResolver = null;
   }
 }
