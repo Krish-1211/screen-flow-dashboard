@@ -837,8 +837,14 @@ app.get('/screens/player', async (req, res) => {
                   (s.day_of_week !== undefined ? [s.day_of_week] : undefined) || 
                   (s.data?.day_of_week !== undefined ? [s.data.day_of_week] : [0,1,2,3,4,5,6]);
 
+        if (String(sid) === String(screen.id)) {
+            logger.info({ sid, pid, st, et, d, screenId: screen.id }, 'Found potentially relevant schedule');
+        }
+
         return { sid, pid, active, st, et, d, rawId: s.id || s.data?.id };
     };
+
+    logger.info({ screenId: screen.id, totalSchedules: allSchedules?.length }, 'Checking schedules');
 
     const relevantSchedules = (allSchedules || []).filter(s => {
         const norm = normalizeSchedule(s);
@@ -943,10 +949,13 @@ app.get('/screens/player', async (req, res) => {
         schedules: validSchedules
     };
 
-    console.log("===== PLAYER CONTEXT RESPONSE =====");
-    console.log(JSON.stringify(payload, null, 2));
-
     // 5. Return the payload
+    logger.info({ 
+        screenId: screen.id, 
+        schedules: payload.schedules.length, 
+        playlists: payload.playlists.map(p => p.id) 
+    }, 'PLAYER CONTEXT RESPONSE');
+    
     res.json(payload);
 });
 

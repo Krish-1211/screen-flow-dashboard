@@ -257,6 +257,8 @@ export default function DisplayPlayerPage() {
       
       const data: PlayerContext = await screensApi.getPlayerConfig(deviceId, localTime, localDay);
       
+      console.log("FULL CONTEXT RECEIVED:", data);
+      
       if (data && data.playlists) {
         setContext(data);
         const activePl = evaluateActivePlaylist(data);
