@@ -45,7 +45,14 @@ export class PlayerEngine {
   private checkSchedule() {
     if (this.scheduleCheckTimer) clearTimeout(this.scheduleCheckTimer);
     
+    console.log("===== SCHEDULE DEBUG =====");
+    console.log("Current Time:", new Date());
+    console.log("Schedules:", this.schedules);
+    console.log("Playlists:", Array.from(this.playlists.entries()));
+    console.log("Default Playlist ID:", this.defaultPlaylistId);
+
     if (!this.currentContext) {
+      console.warn("No context available yet");
       this.scheduleNextCheck(5000);
       return;
     }
@@ -53,6 +60,8 @@ export class PlayerEngine {
     const activePl = this.evaluateActivePlaylist();
     if (activePl) {
       this.applyPlaylistToEngine(activePl);
+    } else {
+      console.error("NO PLAYLIST SELECTED -> FALLBACK TRIGGERED");
     }
 
     // Phase 2 & 6: Smart scheduling
@@ -132,7 +141,30 @@ export class PlayerEngine {
 
     const activeSchedules = (this.schedules || []).filter(s => {
       const days = (s.days || []).map(Number);
-      if (!days.includes(currentDay)) return false;
+      const start = this.toMinutes(s.startTime);
+      const end = this.toMinutes(s.endTime);
+      
+      const matchesDay = days.includes(currentDay);
+      let matchesTime = false;
+      if (end < start) {
+        matchesTime = currentMinutes >= start || currentMinutes < end;
+      } else {
+        matchesTime = currentMinutes >= start && currentMinutes < end;
+      }
+
+      console.log({
+        scheduleId: s.id,
+        playlistId: s.playlistId,
+        currentDay,
+        daysArray: days,
+        matchesDay,
+        currentMinutes,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        startMin: start,
+        endMin: end,
+        matchesTime
+      });
 
       // Phase 4: Validate playlist existence in schedule
       if (!this.playlists.has(String(s.playlistId))) {
@@ -140,21 +172,26 @@ export class PlayerEngine {
         return false;
       }
 
-      const start = this.toMinutes(s.startTime);
-      const end = this.toMinutes(s.endTime);
-
-      if (end < start) return currentMinutes >= start || currentMinutes < end;
-      return currentMinutes >= start && currentMinutes < end;
+      return matchesDay && matchesTime;
     });
+
+    console.log("Active Schedules:", activeSchedules);
 
     let targetPlaylistId: string | null = null;
 
     if (activeSchedules.length > 0) {
       activeSchedules.sort((a, b) => this.toMinutes(b.startTime) - this.toMinutes(a.startTime));
       targetPlaylistId = String(activeSchedules[0].playlistId);
-    } else {
-      targetPlaylistId = this.defaultPlaylistId ? String(this.defaultPlaylistId) : null;
+    } else if (this.defaultPlaylistId && this.playlists.has(String(this.defaultPlaylistId))) {
+      targetPlaylistId = String(this.defaultPlaylistId);
+    } else if (this.playlists.size > 0) {
+      // Phase 3: Force safe fallback to first available playlist
+      const firstAvailable = Array.from(this.playlists.keys())[0];
+      console.warn("No active schedule or valid default. Falling back to first available playlist:", firstAvailable);
+      targetPlaylistId = firstAvailable;
     }
+
+    console.log("Target Playlist ID:", targetPlaylistId);
 
     // Phase 5: Structured Logging
     this.log({

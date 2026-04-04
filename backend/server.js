@@ -886,8 +886,7 @@ app.get('/screens/player', async (req, res) => {
         return { ...pl, items };
     });
 
-    // 5. Return the payload
-    res.json({
+    const payload = {
         screen: {
             id: screen.id,
             name: screen.name,
@@ -910,7 +909,13 @@ app.get('/screens/player', async (req, res) => {
                 days: days.map(Number)
             };
         })
-    });
+    };
+
+    console.log("===== PLAYER CONTEXT RESPONSE =====");
+    console.log(JSON.stringify(payload, null, 2));
+
+    // 5. Return the payload
+    res.json(payload);
 });
 
 app.post('/screens/heartbeat', async (req, res) => {
