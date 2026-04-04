@@ -44,9 +44,9 @@ export function ScreenDetailModal({ screen, open, onOpenChange }: ScreenDetailMo
         enabled: !!screen?.id
     });
 
-    const { data: playlists = [] } = useQuery({
+    const { data: playlists = [] as any[] } = useQuery({
         queryKey: ['playlists'],
-        queryFn: playlistsApi.getAll
+        queryFn: () => playlistsApi.getAll()
     });
 
     const [newSch, setNewSch] = useState({
@@ -68,6 +68,18 @@ export function ScreenDetailModal({ screen, open, onOpenChange }: ScreenDetailMo
         },
         onError: (err: any) => {
             toast.error(err.response?.data?.detail || "Failed to create schedule");
+        }
+    });
+
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }: { id: string, data: Partial<Schedule> }) => schedulesApi.update(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['schedules', screen.id] });
+            queryClient.invalidateQueries({ queryKey: ['screens'] });
+            toast.success("Schedule updated");
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.detail || "Failed to update schedule");
         }
     });
 
@@ -246,7 +258,15 @@ export function ScreenDetailModal({ screen, open, onOpenChange }: ScreenDetailMo
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <Switch checked={s.active} onCheckedChange={() => {}} />
+                                                <Switch 
+                                                    checked={s.active} 
+                                                    onCheckedChange={(checked) => {
+                                                        updateMutation.mutate({ 
+                                                            id: s.id, 
+                                                            data: { ...s, active: checked } 
+                                                        });
+                                                    }} 
+                                                />
                                                 <Button 
                                                     variant="ghost" 
                                                     size="icon" 
