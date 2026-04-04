@@ -765,11 +765,17 @@ app.delete('/playlists/:id', async (req, res) => {
 
 // SCHEDULES
 app.get('/schedules', async (req, res) => {
-    const { data, error } = await supabase
+    let query = supabase
         .from('schedules')
         .select('*')
         .eq('client_id', CLIENT_ID);
 
+    const { screen_id } = req.query;
+    if (screen_id) {
+        query = query.or(`data->>screen_id.eq.${screen_id},id.eq.${screen_id}`);
+    }
+
+    const { data, error } = await query;
     if (error) return res.status(500).json({ error });
     res.json(data.map(s => s.data));
 });
@@ -815,11 +821,12 @@ app.put('/schedules/:id', async (req, res) => {
 });
 
 app.delete('/schedules/:id', async (req, res) => {
+    const { id } = req.params;
     const { error } = await supabase
         .from('schedules')
         .delete()
         .eq('client_id', CLIENT_ID)
-        .eq('data->>id', req.params.id);
+        .eq('id', id);
 
     if (error) return res.status(500).json({ error });
     res.status(204).send();
