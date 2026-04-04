@@ -36,6 +36,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   const watchdogTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRenderAtRef = useRef<number>(Date.now());
   const currentItemRef = useRef<PlaylistItem | null>(null);
+  const lastMediaRef = useRef<any>(null); // 🧠 Tracks if we just had real content
   
   const videoRefA = useRef<HTMLVideoElement>(null);
   const videoRefB = useRef<HTMLVideoElement>(null);
@@ -97,6 +98,11 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
     currentItemRef.current = (activeLayer === 'A' ? itemA : itemB).item;
     if (currentItemRef.current) {
       lastRenderAtRef.current = Date.now();
+      
+      // 🔥 Update lastMediaRef if it's real content (NOT a gap)
+      if (currentItemRef.current.media?.type !== 'system_gap') {
+         lastMediaRef.current = currentItemRef.current;
+      }
     }
   }, [itemA, itemB, activeLayer]);
 
@@ -458,20 +464,29 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
         }}
       >
         {isGap ? (
-          <div className="w-full h-full bg-black flex flex-col items-center justify-center p-20 select-none">
-            <div className="relative text-center">
-              <div className="absolute inset-0 bg-primary/20 blur-[100px] rounded-full scale-150 animate-pulse" />
-              <div className="relative">
-                <div className="text-[14vw] font-black text-white tracking-tighter drop-shadow-[0_0_40px_rgba(255,255,255,0.3)] leading-none">
-                  {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                </div>
-                <div className="flex items-center justify-center gap-6 mt-4 opacity-30">
-                  <div className="h-[2px] w-20 bg-gradient-to-r from-transparent to-white" />
-                  <div className="text-[2vw] font-medium text-white uppercase tracking-[0.5em]">System Idle</div>
-                  <div className="h-[2px] w-20 bg-gradient-to-l from-transparent to-white" />
+          <div className="w-full h-full bg-black flex flex-col items-center justify-center select-none overflow-hidden">
+            {/* 🧠 UI-Level Masking: Never show clock if we were just playing media */}
+            {lastMediaRef.current ? (
+               <img 
+                 src="/black-screen.png" 
+                 className="w-full h-full object-cover" 
+                 alt="transition buffer" 
+               />
+            ) : (
+              <div className="relative text-center">
+                <div className="absolute inset-0 bg-primary/20 blur-[100px] rounded-full scale-150 animate-pulse" />
+                <div className="relative">
+                  <div className="text-[14vw] font-black text-white tracking-tighter drop-shadow-[0_0_40px_rgba(255,255,255,0.3)] leading-none">
+                    {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                  </div>
+                  <div className="flex items-center justify-center gap-6 mt-4 opacity-30">
+                    <div className="h-[2px] w-20 bg-gradient-to-r from-transparent to-white" />
+                    <div className="text-[2vw] font-medium text-white uppercase tracking-[0.5em]">System Idle</div>
+                    <div className="h-[2px] w-20 bg-gradient-to-l from-transparent to-white" />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         ) : isVideo ? (
           <video
