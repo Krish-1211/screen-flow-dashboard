@@ -21,7 +21,7 @@ export class PlayerEngine {
 
   constructor(onRender: (item: PlaylistItem) => void) {
     this.onRender = onRender;
-    this.checkSchedule(); // Initial check
+    this.checkSchedule();
   }
 
   public updateContext(context: PlayerContext) {
@@ -30,13 +30,11 @@ export class PlayerEngine {
     console.log("CONTEXT SYNC RECEIVED:", context);
 
     this.currentContext = context;
-    // Ensure all critical data is assigned
     this.schedules = (context.schedules || []).map(s => ({
       ...s,
       playlistId: String(s.playlistId || s.playlist_id)
     }));
     
-    // Support both naming conventions from backend
     const rawDefault = context.screen?.defaultPlaylistId || context.screen?.playlist_id;
     this.defaultPlaylistId = rawDefault ? String(rawDefault) : null;
     
@@ -44,7 +42,6 @@ export class PlayerEngine {
     (context.playlists || []).forEach(pl => newPlaylistMap.set(String(pl.id), pl));
     this.playlists = newPlaylistMap;
 
-    // Phase 4: Diagnostic Visibility
     console.log("ENGINE UPDATED:", {
       schedules: this.schedules,
       playlists: Array.from(this.playlists.keys()),
@@ -59,12 +56,8 @@ export class PlayerEngine {
     
     console.log("===== SCHEDULE DEBUG =====");
     console.log("Current Time:", new Date());
-    console.log("Schedules:", this.schedules);
-    console.log("Playlists:", Array.from(this.playlists.entries()));
-    console.log("Default Playlist ID:", this.defaultPlaylistId);
 
     if (!this.currentContext) {
-      console.warn("No context available yet");
       this.scheduleNextCheck(5000);
       return;
     }
@@ -76,7 +69,6 @@ export class PlayerEngine {
       console.error("NO PLAYLIST SELECTED -> FALLBACK TRIGGERED");
     }
 
-    // Phase 2 & 6: Smart scheduling
     this.scheduleNextCheck();
   }
 
@@ -88,10 +80,9 @@ export class PlayerEngine {
 
     if (nextChange) {
       const msUntilChange = nextChange.getTime() - Date.now();
-      // Phase 2: Dynamic scheduling with 500ms safety buffer
       delay = Math.min(Math.max(2000, msUntilChange + 500), 30000);
     } else {
-      delay = 30000; // No changes soon, check every 30s
+      delay = 30000;
     }
 
     this.scheduleCheckTimer = setTimeout(() => this.checkSchedule(), delay);
@@ -105,17 +96,17 @@ export class PlayerEngine {
     let nextBoundaryMinutes: number | null = null;
 
     (this.schedules || []).forEach(s => {
-      const days = (s.days || []).map(Number);
-      if (!days.includes(currentDay)) return;
+      const daysArray = (s.days || []).map(Number);
+      if (!daysArray.includes(currentDay)) return;
 
-      const start = this.toMinutes(s.startTime);
-      const end = this.toMinutes(s.endTime);
+      const startMin = this.toMinutes(s.startTime);
+      const endMin = this.toMinutes(s.endTime);
 
-      if (start > currentMinutes) {
-        if (nextBoundaryMinutes === null || start < nextBoundaryMinutes) nextBoundaryMinutes = start;
+      if (startMin > currentMinutes) {
+        if (nextBoundaryMinutes === null || startMin < nextBoundaryMinutes) nextBoundaryMinutes = startMin;
       }
-      if (end > currentMinutes) {
-        if (nextBoundaryMinutes === null || end < nextBoundaryMinutes) nextBoundaryMinutes = end;
+      if (endMin > currentMinutes) {
+        if (nextBoundaryMinutes === null || endMin < nextBoundaryMinutes) nextBoundaryMinutes = endMin;
       }
     });
 
@@ -144,10 +135,18 @@ export class PlayerEngine {
   }
 
   private evaluateActivePlaylist(): Playlist | null {
+    console.log("===== EVALUATING PLAYLIST =====");
+
+    // 1. Declare ALL variables at top to eliminate TDZ
     const now = new Date();
     const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    
+    let activePl: Playlist | null = null;
+    let targetId: string | null = null;
+    let fallbackPl: Playlist | null = null;
 
+    // 2. Identify active schedules
     const activeSchedules = (this.schedules || []).filter(s => {
       const days = (s.days || []).map(Number);
       const start = this.toMinutes(s.startTime);
@@ -161,50 +160,39 @@ export class PlayerEngine {
         matchesTime = currentMinutes >= start && currentMinutes < end;
       }
 
-      const isActive = matchesDay && matchesTime;
-      
-      console.log(`[player] Schedule ${s.id}: matchesDay=${matchesDay}, matchesTime=${matchesTime} -> isActive=${isActive}`);
-      return isActive;
+      return matchesDay && matchesTime;
     });
 
-    if (!this.playlists || this.playlists.size === 0) {
-      console.error("No playlists available in library");
-      return null;
-    }
-
-    // 🔥 1. TRY SCHEDULE FIRST
-    const activeSchedule = activeSchedules.length > 0 ? activeSchedules[0] : null;
-
-    if (activeSchedule) {
-      const scheduledPl = this.playlists.get(String(activeSchedule.playlistId));
-      if (scheduledPl) {
-        console.log("[player] Priority 1: Using scheduled playlist:", scheduledPl.id);
-        return scheduledPl;
+    // Strategy 1: Active Schedule
+    if (activeSchedules.length > 0) {
+      targetId = String(activeSchedules[0].playlistId);
+      activePl = this.playlists.get(targetId) || null;
+      if (activePl) {
+        console.log("[player] Priority 1: Using scheduled playlist:", activePl.id);
+        return activePl;
       }
-      console.warn("[player] Scheduled playlist missing in library:", activeSchedule.playlistId);
     }
 
-    // 🔥 2. FALLBACK TO SCREEN ASSIGNED PLAYLIST (DEFAULT)
+    // Strategy 2: Screen Default
     if (this.defaultPlaylistId) {
-      const defaultPl = this.playlists.get(String(this.defaultPlaylistId));
-      if (defaultPl) {
-        console.log("[player] Priority 2: Using screen assigned playlist:", defaultPl.id);
-        return defaultPl;
+      activePl = this.playlists.get(String(this.defaultPlaylistId)) || null;
+      if (activePl) {
+        console.log("[player] Priority 2: Using screen assigned playlist:", activePl.id);
+        return activePl;
       }
-      console.warn("[player] Default playlist missing in library:", this.defaultPlaylistId);
     }
 
-    // 🔥 3. LAST RESORT (FIRST AVAILABLE IN LIBRARY)
+    // Strategy 3: Library Fallback
     if (this.playlists.size > 0) {
       const firstId = Array.from(this.playlists.keys())[0];
-      const fallbackPl = this.playlists.get(firstId);
+      fallbackPl = this.playlists.get(firstId) || null;
       if (fallbackPl) {
-        console.log("[player] Priority 3: Using last-resort fallback playlist:", fallbackPl.id);
+        console.log("[player] Priority 3: Using library fallback:", fallbackPl.id);
         return fallbackPl;
       }
     }
 
-    console.error("[player] No playlist available whatsoever → returning safe fallback");
+    console.error("[player] CRITICAL: No playlist available → returning safe fallback");
     return {
       id: 'fallback-safe',
       name: 'Safe Fallback',
@@ -230,15 +218,11 @@ export class PlayerEngine {
 
     if (currentId === newId) {
       if (JSON.stringify(newItems) !== JSON.stringify(this.playlist)) {
-        this.log({ type: 'playlist_update', message: 'Content update for current playlist' });
         this.nextPlaylist = newItems;
       }
       return;
     }
 
-    const switchLog = { type: 'playlist_switch', from: currentId, to: newId };
-
-    // Threshold logic for forcing switch
     let shouldForce = false;
     if (this.loopRunning && this.playlist.length > 0) {
       const currentItem = this.playlist[this.currentIndex];
@@ -252,18 +236,15 @@ export class PlayerEngine {
     }
 
     if (shouldForce) {
-      this.log({ ...switchLog, mode: 'immediate', reason: 'threshold_exceeded' });
       this.playlist = newItems;
       this._playlistId = newId;
       this.nextPlaylist = null;
       this.currentIndex = 0;
       this.wakeLoop();
     } else if (this.loopRunning && this.playlist.length > 0) {
-      this.log({ ...switchLog, mode: 'smooth', reason: 'waiting_for_media_end' });
       this.nextPlaylist = newItems;
       this._playlistId = newId;
     } else {
-      this.log({ ...switchLog, mode: 'immediate', reason: 'stopped_or_empty' });
       this.playlist = newItems;
       this._playlistId = newId;
       this.nextPlaylist = null;
@@ -277,7 +258,6 @@ export class PlayerEngine {
     if (this.loopRunning) {
       this.stopPlaybackLoop();
     }
-    console.info('[player] playback start');
     this.shouldRun = true;
     this.clearPendingWait();
     void this.runLoop();
@@ -301,11 +281,9 @@ export class PlayerEngine {
       if (item?.media?.type === 'video') {
         await this.waitForAdvance();
       } else if (item?.media?.type === 'system_gap') {
-        const durationMs = (item.duration || 0.3) * 1000;
-        await this.waitForAdvance(durationMs);
+        await this.waitForAdvance((item.duration || 0.3) * 1000);
       } else {
-        const durationMs = Math.max(1, item?.duration || 10) * 1000;
-        await this.waitForAdvance(durationMs);
+        await this.waitForAdvance(Math.max(1, item?.duration || 10) * 1000);
       }
 
       if (!this.shouldRun || token !== this.loopToken) break;
@@ -335,7 +313,6 @@ export class PlayerEngine {
   }
 
   public stopPlaybackLoop() {
-    console.info('[player] playback stop');
     this.shouldRun = false;
     this.loopToken += 1;
     this.clearPendingWait();

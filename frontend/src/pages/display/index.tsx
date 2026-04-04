@@ -4,8 +4,11 @@ import { WifiOff, AlertTriangle, Volume2, VolumeX } from "lucide-react";
 import { screensApi } from "@/services/api/screens";
 import type { Playlist, PlayerContext, Schedule } from "@/types";
 
+// ── Helpers (Defined outside component to avoid TDZ issues) ──
+const localTimeStrShort = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
 export default function DisplayPlayerPage() {
-  console.log("PLAYER REAL BUILD v3");
+  console.log("PLAYER REAL BUILD v3.1");
 
   const [searchParams, setSearchParams] = useSearchParams();
   const urlDeviceId = searchParams.get("device_id");
@@ -170,14 +173,13 @@ export default function DisplayPlayerPage() {
   }), []);
 
   const evaluateActivePlaylist = useCallback((ctx: PlayerContext): Playlist => {
-    const now = new Date();
-    const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const evalNow = new Date(); // Use local scope variable
+    const currentDay = evalNow.getDay() === 0 ? 6 : evalNow.getDay() - 1;
+    const currentMinutes = evalNow.getHours() * 60 + evalNow.getMinutes();
 
     console.log("===== EVALUATING PLAYLIST =====");
-    console.log("Current Time:", localTimeStrShort(now));
+    console.log("Current Time:", localTimeStrShort(evalNow));
     
-    // Support both ID naming conventions
     const safeSchedules = (ctx.schedules || []).map(s => ({
       ...s,
       playlistId: String((s as any).playlistId || (s as any).playlist_id)
@@ -205,7 +207,6 @@ export default function DisplayPlayerPage() {
     let targetId: string | null = null;
     let strategy = "none";
 
-    // 🏆 PRIORITY 1: SCHEDULE
     if (activeSchedules.length > 0) {
       activeSchedules.sort((a, b) => {
         if (a.startTime !== b.startTime) return b.startTime.localeCompare(a.startTime);
@@ -214,7 +215,6 @@ export default function DisplayPlayerPage() {
       targetId = String(activeSchedules[0].playlistId);
       strategy = "schedule";
     } 
-    // 🥈 PRIORITY 2: SCREEN DEFAULT
     else if (ctx.screen.defaultPlaylistId || (ctx.screen as any).playlist_id) {
       targetId = String(ctx.screen.defaultPlaylistId || (ctx.screen as any).playlist_id);
       strategy = "default";
@@ -227,7 +227,6 @@ export default function DisplayPlayerPage() {
 
     let resolved = findPl(targetId);
 
-    // 🥉 PRIORITY 3: LIBRARY FALLBACK (FIRST AVAILABLE)
     if (!resolved && ctx.playlists?.length > 0) {
       resolved = ctx.playlists.find(p => p.items?.length > 0);
       if (resolved) {
@@ -251,9 +250,9 @@ export default function DisplayPlayerPage() {
     try {
       if (isInitial) setLoading(true);
       
-      const now = new Date();
-      const localTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const jsDay = now.getDay();
+      const loadNow = new Date();
+      const localTime = `${String(loadNow.getHours()).padStart(2, '0')}:${String(loadNow.getMinutes()).padStart(2, '0')}`;
+      const jsDay = loadNow.getDay();
       const localDay = jsDay === 0 ? 6 : jsDay - 1;
       
       const data: PlayerContext = await screensApi.getPlayerConfig(deviceId, localTime, localDay);
@@ -412,10 +411,9 @@ export default function DisplayPlayerPage() {
     );
   }
 
-  const now = new Date();
-  const localTimeStrShort = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-
+  // Early return for "No Content" is fine now because it uses helpers defined at top
   if (!playlist || !playlist.items || playlist.items.length === 0) {
+    const errorNow = new Date();
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white p-6 text-center">
         <AlertTriangle className="w-16 h-16 text-yellow-500 mb-4" />
@@ -423,7 +421,7 @@ export default function DisplayPlayerPage() {
         <p className="mt-2 text-gray-400 max-w-md">Please assign a playlist to this screen from the dashboard to begin playback.</p>
         
         <div className="mt-8 flex flex-col items-center gap-2">
-          <span className="text-4xl font-bold font-mono tracking-tighter text-gray-100">{localTimeStrShort(now)}</span>
+          <span className="text-4xl font-bold font-mono tracking-tighter text-gray-100">{localTimeStrShort(errorNow)}</span>
           <span className="text-[10px] text-gray-600 uppercase tracking-widest">Device Local Time</span>
         </div>
 
