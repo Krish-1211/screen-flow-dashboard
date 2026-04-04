@@ -492,19 +492,7 @@ export default function DisplayPlayerPage() {
           }}
         >
           {isGap ? (
-            <div className="w-full h-full bg-black flex flex-col items-center justify-center">
-              <div className="text-white text-center">
-                <div className="text-8xl font-bold font-mono tracking-tighter mb-4 tabular-nums">
-                  {localTimeStrShort(clockTime)}
-                </div>
-                <div className="text-sm text-gray-500 uppercase tracking-widest font-medium opacity-50">
-                  Waiting for scheduled content
-                </div>
-                <div className="mt-8 text-[10px] text-gray-700 font-mono">
-                  {clockTime.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                </div>
-              </div>
-            </div>
+            <div className="w-full h-full bg-black shadow-[inset_0_0_100px_rgba(0,0,0,1)]" />
           ) : isYoutube ? (
             <iframe
               key={currentItem.id}
