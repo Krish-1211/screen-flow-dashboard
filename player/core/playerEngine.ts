@@ -32,7 +32,11 @@ export class PlayerEngine {
     }
 
     this.currentContext = context;
-    this.schedules = context.schedules || [];
+    // Phase 10: Robust schedule extraction from context
+    this.schedules = (context.schedules || []).map(s => ({
+      ...s,
+      playlistId: String(s.playlistId)
+    }));
     this.defaultPlaylistId = context.screen?.defaultPlaylistId;
     
     const newPlaylistMap = new Map<string, Playlist>();

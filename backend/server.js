@@ -826,17 +826,29 @@ app.get('/screens/player', async (req, res) => {
         .select('*')
         .eq('client_id', CLIENT_ID);
 
-    // Phase 1: Direct row access (remove .map(s => s.data))
-    const relevantSchedules = (allSchedules || []).filter(s => 
-        String(s.screen_id) === String(screen.id) && 
-        s.active !== false &&
-        s.playlist_id
-    );
+    // Phase 1: Robust attribute extraction (handles both raw columns and JSONB '.data' field)
+    const normalizeSchedule = (s) => {
+        const sid = s.screen_id || s.data?.screen_id;
+        const pid = s.playlist_id || s.data?.playlist_id;
+        const active = s.active !== false && (s.data?.active !== false);
+        const st = s.start_time || s.data?.start_time || "00:00";
+        const et = s.end_time || s.data?.end_time || "23:59";
+        const d = s.days_of_week || s.data?.days_of_week || 
+                  (s.day_of_week !== undefined ? [s.day_of_week] : undefined) || 
+                  (s.data?.day_of_week !== undefined ? [s.data.day_of_week] : [0,1,2,3,4,5,6]);
+
+        return { sid, pid, active, st, et, d, rawId: s.id || s.data?.id };
+    };
+
+    const relevantSchedules = (allSchedules || []).filter(s => {
+        const norm = normalizeSchedule(s);
+        return String(norm.sid) === String(screen.id) && norm.active && norm.pid;
+    });
 
     // Phase 2: Complete playlist discovery
     const playlistIds = Array.from(new Set([
         screen.playlist_id,
-        ...relevantSchedules.map(s => s.playlist_id)
+        ...relevantSchedules.map(s => normalizeSchedule(s).pid)
     ].filter(Boolean)));
 
     const { data: playlists, error: plError } = await supabase
@@ -892,19 +904,20 @@ app.get('/screens/player', async (req, res) => {
 
     // Phase 3: Validate and normalize
     const validSchedules = relevantSchedules
-        .filter(s => enrichedPlaylists.some(pl => String(pl.id) === String(s.playlist_id)))
+        .filter(s => {
+            const norm = normalizeSchedule(s);
+            return enrichedPlaylists.some(pl => String(pl.id) === String(norm.pid));
+        })
         .map(s => {
-            let days = s.days_of_week;
-            if (days === undefined || days === null) {
-                days = s.day_of_week !== undefined ? [s.day_of_week] : [0, 1, 2, 3, 4, 5, 6];
-            }
+            const norm = normalizeSchedule(s);
+            let days = norm.d;
             if (!Array.isArray(days)) days = [days];
 
             return {
-                id: s.id,
-                playlistId: String(s.playlist_id),
-                startTime: s.start_time || "00:00",
-                endTime: s.end_time || "23:59",
+                id: String(norm.rawId),
+                playlistId: String(norm.pid),
+                startTime: norm.st,
+                endTime: norm.et,
                 days: days.map(Number)
             };
         });
