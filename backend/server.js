@@ -826,19 +826,18 @@ app.get('/screens/player', async (req, res) => {
         .select('*')
         .eq('client_id', CLIENT_ID);
 
-    const relevantSchedules = (allSchedules || [])
-        .map(s => s.data)
-        .filter(s => 
-            String(s.screen_id) === String(screen.id) && 
-            s.active !== false &&
-            s.playlist_id // Phase 10: Ensure playlistId exists
-        );
+    // Phase 1: Direct row access (remove .map(s => s.data))
+    const relevantSchedules = (allSchedules || []).filter(s => 
+        String(s.screen_id) === String(screen.id) && 
+        s.active !== false &&
+        s.playlist_id
+    );
 
-    // 3. Fetch all playlists involved (default + scheduled)
-    const playlistIds = [
+    // Phase 2: Complete playlist discovery
+    const playlistIds = Array.from(new Set([
         screen.playlist_id,
         ...relevantSchedules.map(s => s.playlist_id)
-    ].filter(Boolean);
+    ].filter(Boolean)));
 
     const { data: playlists, error: plError } = await supabase
         .from('playlists')
@@ -847,7 +846,13 @@ app.get('/screens/player', async (req, res) => {
         .eq('client_id', CLIENT_ID);
 
     if (plError || !playlists) {
+        console.error("Failed to fetch playlists:", plError);
         return res.status(500).json({ error: "Failed to fetch playlists" });
+    }
+
+    // Phase 5: Defensive checks
+    if (playlists.length === 0) {
+        console.error("NO PLAYLISTS SENT TO PLAYER - Screen ID:", screen.id);
     }
 
     // 4. Enrich all playlists with media
@@ -868,7 +873,6 @@ app.get('/screens/player', async (req, res) => {
             media: mediaMap[item.mediaId]
         }));
 
-        // Inject system gap for solo videos
         if (items.length === 1 && items[0].media?.type === 'video') {
             items.push({
                 id: 'system-gap',
@@ -886,17 +890,10 @@ app.get('/screens/player', async (req, res) => {
         return { ...pl, items };
     });
 
-    // Phase 2: Filter schedules to ensure data integrity
+    // Phase 3: Validate and normalize
     const validSchedules = relevantSchedules
-        .filter(s => {
-            const hasPlaylist = enrichedPlaylists.some(pl => String(pl.id) === String(s.playlist_id));
-            if (!hasPlaylist) {
-                console.warn(`Schedule ${s.id} removed: Playlist ${s.playlist_id} not found/fetchable`);
-            }
-            return hasPlaylist;
-        })
+        .filter(s => enrichedPlaylists.some(pl => String(pl.id) === String(s.playlist_id)))
         .map(s => {
-            // Phase 10: Normalize days to numeric array
             let days = s.days_of_week;
             if (days === undefined || days === null) {
                 days = s.day_of_week !== undefined ? [s.day_of_week] : [0, 1, 2, 3, 4, 5, 6];
@@ -911,6 +908,17 @@ app.get('/screens/player', async (req, res) => {
                 days: days.map(Number)
             };
         });
+
+    if (validSchedules.length === 0) {
+        console.warn("NO VALID SCHEDULES FOR THIS SCREEN - Screen ID:", screen.id);
+    }
+
+    console.log("===== DATA INTEGRITY CHECK =====", {
+        screenId: screen.id,
+        schedulesCount: validSchedules.length,
+        playlistIdsCount: playlistIds.length,
+        actualPlaylistsCount: enrichedPlaylists.length
+    });
 
     const payload = {
         screen: {
