@@ -183,17 +183,7 @@ export class PlayerEngine {
       }
     }
 
-    // Strategy 3: Library Fallback
-    if (this.playlists.size > 0) {
-      const firstId = Array.from(this.playlists.keys())[0];
-      fallbackPl = this.playlists.get(firstId) || null;
-      if (fallbackPl) {
-        console.log("[player] Priority 3: Using library fallback:", fallbackPl.id);
-        return fallbackPl;
-      }
-    }
-
-    console.error("[player] CRITICAL: No playlist available → returning safe fallback");
+    console.warn("[player] No active schedule or default playlist found -> system gap");
     return {
       id: 'fallback-safe',
       name: 'Safe Fallback',

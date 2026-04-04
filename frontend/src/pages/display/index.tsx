@@ -242,21 +242,13 @@ export default function DisplayPlayerPage() {
 
     let resolved = findPl(targetId);
 
-    if (!resolved && ctx.playlists?.length > 0) {
-      resolved = ctx.playlists.find(p => p.items?.length > 0);
-      if (resolved) {
-        console.warn(`[player] Strategy '${strategy}' failed to resolve ${targetId}. Falling back to library first-available: ${resolved.id}`);
-        strategy = "library-fallback";
-      }
-    }
-
     if (resolved) {
       console.log(`[player] RESOLVED: ${resolved.id} (${strategy})`);
       lastPlaylistRef.current = resolved;
       return resolved;
     }
 
-    console.error("[player] CRITICAL: No playlist resolved. Triggering safe system gap.");
+    console.warn(`[player] No active schedule or default playlist found. Strategy was: ${strategy}`);
     return SAFE_PLACEHOLDER();
   }, [SAFE_PLACEHOLDER]);
 
