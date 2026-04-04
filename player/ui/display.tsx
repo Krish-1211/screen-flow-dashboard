@@ -133,8 +133,13 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
       const originalItem = currentPlaylist[0];
       const originalUrl = (lockedLayer === 'A' ? itemARef.current : itemBRef.current).url;
 
+      // 1. 🔒 Lock BEFORE anything
       loopLockRef.current = true;
 
+      // 2. ✅ Pause engine so it doesn't push system_gap or advance
+      engine.stopPlaybackLoop();
+
+      // 3. Show black screen image
       const blackItem: PlaylistItem = {
         id: "black",
         mediaId: "black",
@@ -154,6 +159,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
         setItemB({ item: blackItem, url: "/black-screen.png" });
       }
 
+      // 4. Restart original content after delay
       setTimeout(() => {
         if (lockedLayer === 'A') {
           setItemA({ item: originalItem, url: originalUrl });
@@ -162,6 +168,10 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
         }
 
         loopLockRef.current = false;
+
+        // 5. ✅ Restart engine loop after video is restored
+        engine.startPlayback();
+        console.log("[player] loop restarted (lock released, engine resumed)");
       }, 1000);
 
       return;
