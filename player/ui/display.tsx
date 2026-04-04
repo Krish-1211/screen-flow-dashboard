@@ -18,8 +18,15 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [state, setState] = useState<PlayerState>(PlayerState.IDLE);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [isStaleOffline, setIsStaleOffline] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const t = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
   
   const engineRef = useRef<PlayerEngine | null>(null);
   const syncRef = useRef<SyncManager | null>(null);
@@ -325,14 +332,31 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
   }, [activeLayer, itemA.item, itemB.item, playlistItems]);
 
   const handleVideoEnded = () => {
-    const video = activeLayer === 'A' ? videoRefA.current : videoRefB.current;
-    if (video) {
-        console.log("ENDED FIRED");
-        console.log("CURRENT TIME:", video.currentTime);
-        console.log("DURATION:", video.duration);
+    const engine = engineRef.current;
+    if (!engine) return;
+
+    // SINGLE VIDEO LOOP CASE: Pause engine schedule checks 
+    if (playlistItems.length === 1) {
+      console.log("[player] Manual loop transition started");
+      setIsTransitioning(true);
+      engine.isLooping = true; // PAUSE THE ENGINE LOGIC
+
+      setTimeout(() => {
+        const activeVideo = activeLayer === 'A' ? videoRefA.current : videoRefB.current;
+        if (activeVideo) {
+          activeVideo.currentTime = 0;
+          void activeVideo.play().catch(() => {});
+        }
+        
+        setIsTransitioning(false);
+        engine.isLooping = false; // RELEASE THE ENGINE
+        console.log("[player] Manual loop transition completed");
+      }, 300);
+      return;
     }
+
     console.log("[player] VIDEO ENDED, advancing engine...");
-    engineRef.current?.onMediaEnded();
+    engine.onMediaEnded();
   };
 
   const handleMediaError = () => {
@@ -451,8 +475,24 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) =
           willChange: 'opacity'
         }}
       >
-        {isGap ? (
-          <div className="w-full h-full bg-black" />
+        {isTransitioning ? (
+           <div className="w-full h-full bg-black z-20" />
+        ) : isGap ? (
+          <div className="w-full h-full bg-black flex flex-col items-center justify-center p-20 select-none">
+            <div className="relative text-center">
+              <div className="absolute inset-0 bg-primary/20 blur-[100px] rounded-full scale-150 animate-pulse" />
+              <div className="relative">
+                <div className="text-[14vw] font-black text-white tracking-tighter drop-shadow-[0_0_40px_rgba(255,255,255,0.3)] leading-none">
+                  {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                </div>
+                <div className="flex items-center justify-center gap-6 mt-4 opacity-30">
+                  <div className="h-[2px] w-20 bg-gradient-to-r from-transparent to-white" />
+                  <div className="text-[2vw] font-medium text-white uppercase tracking-[0.5em]">System Idle</div>
+                  <div className="h-[2px] w-20 bg-gradient-to-l from-transparent to-white" />
+                </div>
+              </div>
+            </div>
+          </div>
         ) : isVideo ? (
           <video
             // Requirement 2: Key-based remounting on source change
