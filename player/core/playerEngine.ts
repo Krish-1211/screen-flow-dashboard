@@ -230,7 +230,11 @@ export class PlayerEngine {
 
     // 🔥 AUTOMATIC BLACK FRAME INJECTION FOR SINGLE-VIDEO LOOPS
     // This allows the player to naturally cycle (Video -> Black Frame -> Video)
-    if (rawItems.length === 1 && rawItems[0].media?.type === 'video') {
+    if (
+        rawItems.length === 1 && 
+        rawItems[0].media?.type === 'video' &&
+        !rawItems.some(i => i.id === `auto-loop-gap-${pl.id}`)
+    ) {
       rawItems.push({
         id: `auto-loop-gap-${pl.id}`,
         mediaId: 'auto-loop-gap',

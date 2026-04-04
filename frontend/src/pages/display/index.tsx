@@ -257,7 +257,11 @@ export default function DisplayPlayerPage() {
       // 🔥 SEQUENTIAL LOOP INJECTION:
       // If exactly 1 video exists, append 1s black-frame item to ensure seamless loop
       const items = [...(resolved.items || [])];
-      if (items.length === 1 && items[0].media?.type === 'video') {
+      if (
+        items.length === 1 && 
+        items[0].media?.type === 'video' &&
+        !items.some(i => i.id === 'auto-loop-buffer') // 🛡️ Prevent Infinite Darkness Simulator
+      ) {
          items.push({
            id: 'auto-loop-buffer',
            mediaId: 'black',
@@ -436,6 +440,15 @@ export default function DisplayPlayerPage() {
   }, [currentIndex, playlist, advanceMedia, preloadNextItem]);
 
   const handleMediaError = () => {
+    const activeItem = playlist?.items?.[currentIndex];
+    
+    // 🧠 Quiet skip for system buffer. No more "SYSTEM FAILURE" just because a PNG failed.
+    if (activeItem?.id === 'auto-loop-buffer') {
+      console.warn("[player] black buffer failed, skipping silently");
+      advanceMedia();
+      return;
+    }
+
     setMediaError(true);
     setTimeout(advanceMedia, 5000);
   };
@@ -568,8 +581,8 @@ export default function DisplayPlayerPage() {
           ) : (
             <img
               key={playlist.items.length === 1 ? 'static-img' : currentItem.id}
-              src={mediaUrl}
-              className="w-full h-full object-contain"
+              src={mediaUrl || '/black-screen.png'} // 🛡️ Fallback to black local image
+              className="w-full h-full object-contain bg-black" // 👈 FORCE BLACK background so even if it's slow/failing it looks correct
               alt="Content"
               onError={handleMediaError}
             />
