@@ -1,4 +1,4 @@
-import type { PlaylistItem, Playlist, Schedule, PlayerContext } from '@/types';
+import type { PlaylistItem, Media, Playlist, Schedule, PlayerContext } from '@/types';
 
 export class PlayerEngine {
   private playlist: PlaylistItem[] = [];
@@ -234,6 +234,7 @@ export class PlayerEngine {
       rawItems.push({
         id: `auto-loop-gap-${pl.id}`,
         mediaId: 'auto-loop-gap',
+        is_system: true,
         order: 1,
         duration: 0.5,
         media: {

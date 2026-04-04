@@ -261,6 +261,7 @@ export default function DisplayPlayerPage() {
          items.push({
            id: 'auto-loop-buffer',
            mediaId: 'black',
+           is_system: true, // 👈 Hide from dashboard/UI
            duration: 1, // 1 second buffer
            order: 1,
            media: {

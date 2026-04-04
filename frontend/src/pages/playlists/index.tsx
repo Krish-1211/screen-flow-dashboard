@@ -437,7 +437,9 @@ export default function PlaylistsPage() {
                       No items yet. Select media from the library panel.
                     </div>
                   ) : (
-                    selected.items.map((item: any) => {
+                    selected.items
+                      .filter((i: any) => !i.is_system) // 🛡️ Filter out loop buffers/system items
+                      .map((item: any) => {
                       const m = item.media || {};
                       const isVideo = m.type === 'video';
                       return (

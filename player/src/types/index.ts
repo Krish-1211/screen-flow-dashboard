@@ -13,6 +13,7 @@ export interface PlaylistItem {
   media?: Media;
   duration: number;
   order: number;
+  is_system?: boolean; // 👈 Runtime injected items
 }
 
 export interface Playlist {
