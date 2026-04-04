@@ -180,11 +180,12 @@ export default function DisplayPlayerPage() {
         id: 'safe-media',
         name: 'System Recovery',
         type: 'system_gap',
-        url: '',
+        url: '/black-screen.png',
         node_type: 'file'
       }
     }]
   }), []);
+
 
   const evaluateActivePlaylist = useCallback((ctx: PlayerContext): Playlist => {
     const evalNow = new Date(); // Use local scope variable
@@ -252,6 +253,27 @@ export default function DisplayPlayerPage() {
 
     if (resolved) {
       console.log(`[player] RESOLVED: ${resolved.id} (${strategy})`);
+      
+      // 🔥 SEQUENTIAL LOOP INJECTION:
+      // If exactly 1 video exists, append 1s black-frame item to ensure seamless loop
+      const items = [...(resolved.items || [])];
+      if (items.length === 1 && items[0].media?.type === 'video') {
+         items.push({
+           id: 'auto-loop-buffer',
+           mediaId: 'black',
+           duration: 1, // 1 second buffer
+           order: 1,
+           media: {
+             id: 'black-media',
+             name: 'loop-gap',
+             type: 'image',
+             url: '/black-screen.png',
+             node_type: 'file'
+           }
+         });
+         resolved = { ...resolved, items };
+      }
+
       lastPlaylistRef.current = resolved;
       return resolved;
     }
@@ -538,24 +560,8 @@ export default function DisplayPlayerPage() {
               preload="auto"
               onError={handleMediaError}
               onEnded={() => {
-                if (playlist.items.length === 1) {
-                   console.log("[player] v4.0.0 Loop -> 500ms Black transition");
-                   setIsTransitioning(true);
-                   
-                   if (videoRef.current) {
-                     videoRef.current.currentTime = 0;
-                     videoRef.current.pause();
-                   }
-                   
-                   setTimeout(() => {
-                     setIsTransitioning(false);
-                     if (videoRef.current) {
-                        videoRef.current.play().catch(() => {});
-                     }
-                   }, 500); // 500ms buffer to be safe
-                } else {
-                   advanceMedia();
-                }
+                // Now that the engine handles loop injection, we just advance
+                advanceMedia();
               }}
             />
           ) : (
