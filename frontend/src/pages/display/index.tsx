@@ -76,6 +76,12 @@ export default function DisplayPlayerPage() {
   const [mediaError, setMediaError] = useState(false);
   const [muted, setMuted] = useState(false);
   const [fadeState, setFadeState] = useState<'in' | 'out'>('in');
+  const [clockTime, setClockTime] = useState(new Date());
+
+  useEffect(() => {
+    const interval = setInterval(() => setClockTime(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, []);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -475,7 +481,19 @@ export default function DisplayPlayerPage() {
           }}
         >
           {isGap ? (
-            <div className="w-full h-full bg-black" />
+            <div className="w-full h-full bg-black flex flex-col items-center justify-center">
+              <div className="text-white text-center">
+                <div className="text-8xl font-bold font-mono tracking-tighter mb-4 tabular-nums">
+                  {localTimeStrShort(clockTime)}
+                </div>
+                <div className="text-sm text-gray-500 uppercase tracking-widest font-medium opacity-50">
+                  Waiting for scheduled content
+                </div>
+                <div className="mt-8 text-[10px] text-gray-700 font-mono">
+                  {clockTime.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </div>
+              </div>
+            </div>
           ) : isYoutube ? (
             <iframe
               key={currentItem.id}
