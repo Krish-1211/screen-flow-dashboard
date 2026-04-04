@@ -226,7 +226,25 @@ export class PlayerEngine {
   private applyPlaylistToEngine(pl: Playlist) {
     const currentId = this._playlistId;
     const newId = String(pl.id);
-    const newItems = [...(pl.items || [])];
+    const rawItems = [...(pl.items || [])];
+
+    // 🔥 AUTOMATIC BLACK FRAME INJECTION FOR SINGLE-VIDEO LOOPS
+    // This allows the player to naturally cycle (Video -> Black Frame -> Video)
+    if (rawItems.length === 1 && rawItems[0].media?.type === 'video') {
+      rawItems.push({
+        id: `auto-loop-gap-${pl.id}`,
+        mediaId: 'auto-loop-gap',
+        order: 1,
+        duration: 0.5,
+        media: {
+          id: 'auto-loop-gap-media',
+          name: 'loop-gap',
+          type: 'image',
+          url: '/black-screen.png'
+        }
+      });
+    }
+    const newItems = rawItems;
 
     if (currentId === newId) {
       if (JSON.stringify(newItems) !== JSON.stringify(this.playlist)) {
