@@ -163,7 +163,7 @@ export default function PlaylistsPage() {
     const newItem = {
       id: Math.random().toString(36).substr(2, 9),
       mediaId: m.id,
-      duration: m.type === 'video' ? 0 : (m.duration || 10),
+      duration: (m.type === 'video' || m.type === 'youtube') ? 0 : (m.duration || 10),
       media: m
     };
     const updatedItems = [...(selected.items || []), newItem];
@@ -441,7 +441,7 @@ export default function PlaylistsPage() {
                       .filter((i: any) => !i.is_system) // 🛡️ Filter out loop buffers/system items
                       .map((item: any) => {
                       const m = item.media || {};
-                      const isVideo = m.type === 'video';
+                      const isVideo = m.type === 'video' || m.type === 'youtube';
                       return (
                         <div key={item.id} className="flex flex-row items-center gap-3 p-3 hover:bg-accent/10 transition-colors group">
                           <GripVertical className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground cursor-grab shrink-0" />
