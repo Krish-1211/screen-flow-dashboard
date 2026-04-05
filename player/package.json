@@ -1,12 +1,18 @@
 {
-  "name": "screenflow-player",
-  "private": true,
   "version": "1.0.0",
+  "name": "visiqon-player",
+  "description": "Visiqon Digital Signage Player - High Performance Playback Engine",
+  "author": "Visiqon Team",
+  "private": true,
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
+    "dev:shell": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron electron/main.cjs",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "cross-env NODE_ENV=production electron electron/main.cjs",
+    "electron:build": "npm run build && electron-builder --win --x64"
   },
   "dependencies": {
     "axios": "^1.7.9",
@@ -25,6 +31,35 @@
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
-    "vite": "^6.1.1"
+    "vite": "^6.1.1",
+    "electron": "31.3.0",
+    "electron-builder": "^24.13.3",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.visiqon.player",
+    "productName": "Visiqon",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Visiqon",
+      "uninstallDisplayName": "Visiqon Player Uninstall"
+    }
   }
 }

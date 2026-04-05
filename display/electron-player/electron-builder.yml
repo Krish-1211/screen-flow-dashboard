@@ -1,0 +1,22 @@
+appId: com.screenflow.player
+productName: ScreenFlow Player
+directories:
+  output: dist-electron
+files:
+  - src/main.js
+  - src/preload.js
+  - dist-renderer/**/*
+win:
+  target: nsis
+
+mac:
+  target: dmg
+
+linux:
+  target: AppImage
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  runAfterFinish: true

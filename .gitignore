@@ -16,8 +16,10 @@ lerna-debug.log*
 
 # Build
 dist
+dist_electron
 dist-ssr
 node_modules
+*.asar
 
 # Editor directories and files
 .vscode/*

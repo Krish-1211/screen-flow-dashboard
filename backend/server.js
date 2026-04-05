@@ -671,32 +671,38 @@ app.get('/playlists', async (req, res) => {
 });
 
 app.post('/playlists', async (req, res) => {
-    let { name } = req.body;
-    if (!name) name = "New Playlist";
+    const { name: rawName, parent_id, node_type, items } = req.body;
+    let name = rawName || "New Playlist";
+    let finalName = name;
+    let counter = 1;
+    
+    // 1. Loop until we find a unique name
+    while (true) {
+        const { data: existing } = await supabase
+            .from('playlists')
+            .select('name')
+            .eq('client_id', CLIENT_ID)
+            .eq('name', finalName)
+            .maybeSingle();
 
-    // 1. Check for duplicates
-    const { data: existing } = await supabase
-        .from('playlists')
-        .select('name')
-        .eq('client_id', CLIENT_ID)
-        .eq('name', name)
-        .maybeSingle();
-
-    if (existing) {
-        return res.status(400).json({ error: `A playlist named "${name}" already exists.` });
+        if (!existing) break;
+        finalName = `${name} (${counter++})`;
     }
 
     const playlist = {
         id: Date.now().toString(),
         client_id: CLIENT_ID,
-        name,
-        node_type: req.body.node_type || 'playlist',
-        parent_id: req.body.parent_id || null,
-        items: req.body.items || []
+        name: finalName,
+        node_type: node_type || 'playlist',
+        parent_id: parent_id || null,
+        items: items || []
     };
 
     const { error } = await supabase.from('playlists').insert(playlist);
-    if (error) return res.status(500).json({ error });
+    if (error) {
+        logger.error({ error, playlist }, 'Playlist insertion failed');
+        return res.status(500).json({ error: "Failed to create playlist" });
+    }
 
     res.json(playlist);
 });

@@ -1,239 +1,281 @@
-import React, { useState, useEffect, useRef } from "react";
-import { PlayerEngine } from "../core/playerEngine";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { AlertTriangle, Volume2, VolumeX, WifiOff, Monitor, Settings, Save, Server } from "lucide-react";
+import type { Playlist, PlayerContext } from "@/types";
+import { evaluateActivePlaylist, localTimeStrShort } from "../src/core/scheduler";
 import { SyncManager, type SyncStatus } from "../sync/syncManager";
-import { PlayerState, PlayerStateMachine } from "../core/stateMachine";
-import type { PlaylistItem, PlayerContext } from "@/types";
 import { mediaCache } from "../storage/mediaCache";
+import { playerConfig } from "../config/playerConfig";
 
 interface PlayerProps {
   deviceId: string;
   apiBaseUrl: string;
 }
 
-export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId, apiBaseUrl }) => {
-  console.log("[PLAYER] Component rendered, build check:", Date.now());
-  const [activeLayer, setActiveLayer] = useState<'A' | 'B'>('A');
-  const [itemA, setItemA] = useState<{ item: PlaylistItem | null, url: string }>({ item: null, url: '' });
-  const [itemB, setItemB] = useState<{ item: PlaylistItem | null, url: string }>({ item: null, url: '' });
+export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiBaseUrl: initialUrl }) => {
+  const [deviceId, setDeviceId] = useState(initialId);
+  const [apiBaseUrl, setApiBaseUrl] = useState(initialUrl);
 
-  const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
-  const [state, setState] = useState<PlayerState>(PlayerState.IDLE);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [connected, setConnected] = useState(navigator.onLine);
+  const [context, setContext] = useState<PlayerContext | null>(null);
+  const [playlist, setPlaylist] = useState<Playlist | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [mediaError, setMediaError] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [fadeState, setFadeState] = useState<'in' | 'out'>('in');
   const [currentTime, setCurrentTime] = useState(new Date());
+  
+  // HUD and Setup states
+  const [showStatus, setShowStatus] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
+  const [setupUrl, setSetupUrl] = useState(apiBaseUrl);
+  const [setupId, setSetupId] = useState(deviceId);
 
-  const engineRef = useRef<PlayerEngine | null>(null);
-  const loopLockRef = useRef(false);
-  const videoRefA = useRef<HTMLVideoElement>(null);
-  const videoRefB = useRef<HTMLVideoElement>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const preloadedNextRef = useRef<HTMLImageElement | HTMLVideoElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const syncRef = useRef<SyncManager | null>(null);
 
-  // 🧠 Mirror Refs to solve stale closures in async callbacks
-  const activeLayerRef = useRef(activeLayer);
-  const itemARef = useRef(itemA);
-  const itemBRef = useRef(itemB);
-  const playlistItemsRef = useRef(playlistItems);
+  // ── Keyboard Controls ──
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'd' || e.key === 'D') setShowStatus(prev => !prev);
+      if (e.key === 's' || e.key === 'S') setShowSetup(prev => !prev);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
 
-  useEffect(() => { activeLayerRef.current = activeLayer; }, [activeLayer]);
-  useEffect(() => { itemARef.current = itemA; }, [itemA]);
-  useEffect(() => { itemBRef.current = itemB; }, [itemB]);
-  useEffect(() => { playlistItemsRef.current = playlistItems; }, [playlistItems]);
-
+  // ── Ticker & Clock ──
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  const playVideoSafe = async (video: HTMLVideoElement | null) => {
-    if (!video) return;
-    try {
-      video.pause();
-      video.currentTime = 0;
-      video.load();
-      await video.play().catch(() => {
-        video.muted = true;
-        return video.play();
-      });
-    } catch (e) {
-      console.error("[player] video restart error", e);
-    }
-  };
+  useEffect(() => {
+    if (!context) return;
+    
+    // Evaluate based on current time
+    const activePl = evaluateActivePlaylist(context);
+    
+    setPlaylist(currentPl => {
+      // Only reset the index if the playlist ID actually changes
+      if (!currentPl || activePl.id !== currentPl.id) {
+        console.info(`[player] scheduling: switching to playlist ${activePl.name}`);
+        setCurrentIndex(0);
+        return activePl;
+      }
+      return activePl;
+    });
+  }, [currentTime, context]);
+
+  // ── Sync Logic Implementation ──
+  const applyContext = useCallback((newCtx: PlayerContext) => {
+    setContext(newCtx);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    const engine = new PlayerEngine(async (item) => {
-      console.log("[ENGINE CB] onRender fired, type:", item.media?.type, "lock:", loopLockRef.current);
-      
-      // 🔒 BLOCK ENGINE DURING LOOP
-      if (loopLockRef.current) {
-        console.log("[ENGINE CB] BLOCKED engine update (loop lock active)");
-        return;
-      }
+    if (!deviceId) return;
 
-      let url = "";
-      if (item.media?.type !== "system_gap") {
-        url = await mediaCache.getMediaSource(item.media?.url || "");
-      } else {
-        url = "/black-screen.png";
-      }
+    if (syncRef.current) syncRef.current.stop();
 
-      const currentItem = (activeLayerRef.current === 'A' ? itemARef.current : itemBRef.current).item;
-
-      // 🧠 HARD LOOP DETECTION (USING REFS)
-      if (currentItem?.id === item.id) {
-        console.log("[player] HARD LOOP (Ref-tracked) → restart video");
-
-        const video = activeLayerRef.current === 'A' ? videoRefA.current : videoRefB.current;
-        if (item.media?.type === "video" && video) {
-          void playVideoSafe(video);
-        }
-
-        return; // ❌ NO state update
-      }
-
-      setPlaylistItems(engine.getPlaylistItems());
-
-      setActiveLayer((curr) => {
-        const next = curr === 'A' ? 'B' : 'A';
-
-        if (next === 'A') setItemA({ item, url });
-        else setItemB({ item, url });
-
-        return next;
-      });
-
-    });
-
-    (window as any).engine = engine;
-
-    const sync = new SyncManager(
+    syncRef.current = new SyncManager(
       deviceId,
       apiBaseUrl,
-      (context: PlayerContext) => {
-        engine.updateContext(context);
-      },
-      () => {},
+      applyContext,
+      (status: SyncStatus) => setConnected(status.online),
       () => {}
     );
 
-    engineRef.current = engine;
-    engine.startPlayback();
-    sync.startSyncLoop();
+    syncRef.current.bootstrapFromLocal();
+    syncRef.current.startSyncLoop();
+
+    // Safety: If after 2 seconds we are still loading, allow showing setup
+    const loadingTimeout = setTimeout(() => {
+      setLoading(false);
+    }, 2000);
 
     return () => {
-      engine.stopPlaybackLoop();
-      sync.stop();
+      syncRef.current?.stop();
+      clearTimeout(loadingTimeout);
     };
+  }, [deviceId, apiBaseUrl, applyContext]);
 
-  }, [deviceId, apiBaseUrl]);
+  // Advance Engine
+  const advanceMedia = useCallback(() => {
+    setMediaError(false);
+    setFadeState('out');
+    setTimeout(() => {
+      setPlaylist(currentPl => {
+        if (!currentPl?.items?.length || currentPl.items.length === 1) return currentPl;
+        setCurrentIndex((prev) => (prev + 1) % currentPl.items.length);
+        return currentPl;
+      });
+      setFadeState('in');
+    }, 300);
+  }, []);
 
-  const handleVideoEnded = () => {
-    console.log("[ENDED] handleVideoEnded fired");
-    const engine = engineRef.current;
-    if (!engine) return;
+  // Media Management
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (!playlist?.items?.length) return;
 
-    const currentPlaylist = playlistItemsRef.current;
-    console.log("[ENDED] playlist length:", currentPlaylist.length);
-    console.log("[ENDED] loopLockRef before lock:", loopLockRef.current);
+    const currentItem = playlist.items[currentIndex];
+    if (playlist.items.length === 1 && currentItem?.media?.type !== 'video') return;
 
-    // 🔥 SINGLE VIDEO LOOP FIX (FINAL - USING REFS)
-    if (currentPlaylist.length === 1) {
-      const lockedLayer = activeLayerRef.current;
-      const originalItem = currentPlaylist[0];
-      const originalUrl = (lockedLayer === 'A' ? itemARef.current : itemBRef.current).url;
-
-      // 1. 🔒 Lock BEFORE anything
-      loopLockRef.current = true;
-      console.log("[ENDED] lock SET, stopping engine");
-
-      // 2. ✅ Pause engine so it doesn't push system_gap or advance
-      engine.stopPlaybackLoop();
-      console.log("[ENDED] engine stopped");
-
-      // 3. Show black screen image
-      const blackItem: PlaylistItem = {
-        id: "black",
-        mediaId: "black",
-        order: 0,
-        duration: 1000,
-        media: {
-          id: "black",
-          name: "black",
-          type: "image",
-          url: "/black-screen.png"
-        }
-      };
-
-      if (lockedLayer === 'A') {
-        setItemA({ item: blackItem, url: "/black-screen.png" });
-      } else {
-        setItemB({ item: blackItem, url: "/black-screen.png" });
-      }
-
-      // 4. Restart original content after delay
-      setTimeout(() => {
-        console.log("[ENDED] timeout fired, restoring video");
-        if (lockedLayer === 'A') {
-          setItemA({ item: originalItem, url: originalUrl });
-        } else {
-          setItemB({ item: originalItem, url: originalUrl });
-        }
-
-        loopLockRef.current = false;
-
-        // 5. ✅ Restart engine loop after video is restored
-        engine.startPlayback();
-        console.log("[ENDED] engine restarted");
-      }, 1000);
-
+    if (currentItem?.media?.type === 'video') {
+      if (videoRef.current && videoRef.current.paused) videoRef.current.play().catch(() => {});
       return;
     }
 
-    engine.onMediaEnded();
+    const duration = currentItem.duration || 10;
+    timerRef.current = setTimeout(advanceMedia, duration * 1000);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [currentIndex, playlist, advanceMedia]);
+
+  const handleMediaError = useCallback(() => {
+    setMediaError(true);
+    setTimeout(advanceMedia, 5000);
+  }, [advanceMedia]);
+
+  const handleSaveSetup = () => {
+    localStorage.setItem('sf_api_url', setupUrl);
+    localStorage.setItem('sf_device_id', setupId);
+    window.location.reload();
   };
 
-  const renderLayer = (layer: 'A' | 'B') => {
-    const data = layer === 'A' ? itemA : itemB;
-    if (!data.item) return null;
-
-    const isVideo = data.item.media?.type === "video";
-    const isGap = data.item.media?.type === "system_gap" && playlistItems.length === 0;
-    const visible = activeLayer === layer;
-
+  if (loading && !showSetup) {
     return (
-      <div
-        style={{
-          opacity: visible ? 1 : 0,
-          transition: "opacity 0.5s"
-        }}
-        className="absolute inset-0"
-      >
-        {isGap ? (
-          <div className="w-full h-full bg-black flex items-center justify-center text-white text-6xl">
-            {currentTime.toLocaleTimeString()}
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-white"></div>
+      </div>
+    );
+  }
+
+  // ── Fallback / Setup Selection ──
+  if ((!playlist || !playlist.items || playlist.items.length === 0) || showSetup) {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white text-center p-6 font-sans">
+        <div className="mb-12">
+          <Monitor className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+          <h1 className="text-4xl font-bold tracking-tight">VISIQON</h1>
+          <p className="text-blue-400/50 uppercase tracking-widest text-[10px] mt-1">Player Setup</p>
+        </div>
+
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-8 w-full max-w-md backdrop-blur-xl shadow-2xl">
+          <div className="space-y-6 text-left">
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase tracking-widest block mb-2 font-bold">Server Connectivity</label>
+              <div className="flex items-center gap-3 bg-black/40 p-3 rounded-lg border border-white/5">
+                <Server className="w-4 h-4 text-gray-500" />
+                <input 
+                  type="text" 
+                  value={setupUrl} 
+                  onChange={(e) => setSetupUrl(e.target.value)}
+                  className="bg-transparent border-none outline-none w-full text-sm font-mono"
+                  placeholder="https://api.visiqon.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] text-gray-500 uppercase tracking-widest block mb-2 font-bold">Identity Secret</label>
+              <div className="flex items-center gap-3 bg-black/40 p-3 rounded-lg border border-white/5">
+                <Settings className="w-4 h-4 text-gray-500" />
+                <input 
+                  type="text" 
+                  value={setupId} 
+                  onChange={(e) => setSetupId(e.target.value)}
+                  className="bg-transparent border-none outline-none w-full text-sm font-mono"
+                  placeholder="Paste Device ID here"
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={handleSaveSetup}
+              className="w-full bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all py-4 rounded-xl font-bold flex items-center justify-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              ACTIVATE VISIQON
+            </button>
           </div>
-        ) : isVideo ? (
+        </div>
+
+        <div className="mt-8 text-gray-600 text-[10px] uppercase tracking-widest">
+           System Time: {localTimeStrShort(currentTime)}
+        </div>
+      </div>
+    );
+  }
+
+  const currentItem = playlist.items[currentIndex];
+  const isVideo = currentItem?.media?.type === "video";
+  const mediaUrl = currentItem?.media?.url || '';
+
+  return (
+    <div ref={containerRef} className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden cursor-none">
+      <div 
+        className="absolute inset-0" 
+        style={{ opacity: fadeState === 'in' ? 1 : 0, transition: 'opacity 200ms ease' }}
+      >
+        {isVideo ? (
           <video
-            key={`${layer}-${data.url}-${data.item.id}`}
-            ref={layer === 'A' ? videoRefA : videoRefB}
-            src={data.url}
-            autoPlay
-            playsInline
-            muted
+            key={`${currentItem.id}-${currentIndex}`}
+            ref={videoRef}
+            src={mediaUrl}
+            autoPlay playsInline muted={muted} loop={false}
             className="w-full h-full object-contain"
-            onEnded={handleVideoEnded}
+            onEnded={advanceMedia}
+            onError={handleMediaError}
           />
         ) : (
           <img
-            src={data.url}
-            className="w-full h-full object-contain"
+            key={currentItem.id}
+            src={mediaUrl || '/black-screen.png'}
+            className="w-full h-full object-contain bg-black"
+            onError={handleMediaError}
           />
         )}
       </div>
-    );
-  };
 
-  return (
-    <div className="fixed inset-0 bg-black">
-      {renderLayer('A')}
-      {renderLayer('B')}
-      <div className="fixed bottom-4 right-4 text-white/30 text-xs z-50">v2.0.4 - FIXED</div>
+      {/* Connectivity Alert */}
+      {!connected && (
+        <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/60 backdrop-blur-sm border border-red-500/30 px-3 py-1 rounded-full z-50">
+          <WifiOff size={12} className="text-red-500" />
+          <span className="text-[10px] text-red-500 font-bold uppercase tracking-widest">Offline</span>
+        </div>
+      )}
+
+      {/* Minimal Logo Overlay */}
+      <div className="absolute bottom-4 left-4 z-50 pointer-events-none opacity-20 hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-2 font-mono text-[9px] text-white">
+          <span className="font-bold tracking-widest">VISIQON</span>
+          <span className="text-white/20">|</span>
+          <span className="text-white/40">{localTimeStrShort(currentTime)}</span>
+        </div>
+      </div>
+
+      {/* Diagnostic Overlay */}
+      {showStatus && (
+        <div className="absolute inset-0 bg-black/90 p-10 text-white font-mono z-[9999] pointer-events-none">
+          <h1 className="text-xl font-bold border-b border-white/20 pb-2 mb-4 text-blue-500">VISIQON_CORE_DIAGNOSTIC</h1>
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-4 text-xs">
+              <div>DEVICE_ID: <span className="text-yellow-500">{deviceId}</span></div>
+              <div>SERVER: <span className="text-blue-400">{apiBaseUrl}</span></div>
+              <div>STATUS: <span className={connected ? "text-green-500" : "text-red-500"}>{connected ? "ONLINE" : "OFFLINE"}</span></div>
+              <div>PLAYLIST: {playlist?.name} ({playlist?.id})</div>
+              <div>INDEX: {currentIndex + 1} / {playlist?.items?.length}</div>
+            </div>
+            <div className="text-[9px] text-gray-500 uppercase tracking-widest text-right">
+              Press 'D' to hide | Press 'S' for Setup
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

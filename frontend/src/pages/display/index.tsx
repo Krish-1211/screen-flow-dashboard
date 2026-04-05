@@ -104,9 +104,19 @@ export default function DisplayPlayerPage() {
       context,
       playlist,
       deviceId,
-      currentIndex
+      currentIndex,
+      lastUpdate: new Date().toLocaleTimeString()
     };
   }, [context, playlist, deviceId, currentIndex]);
+
+  const [showStatus, setShowStatus] = useState(false);
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'd' || e.key === 'D') setShowStatus(prev => !prev);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
 
   useEffect(() => {
     const handleContext = (e: Event) => e.preventDefault();
@@ -223,6 +233,9 @@ export default function DisplayPlayerPage() {
 
       console.log(`[player] Eval Sched ${s.id}: dayMatch=${isDayMatch}(${days} vs ${currentDay}), timeMatch=${isTimeMatch}(${start}-${end} vs ${currentMinutes})`);
       
+      (window as any)._lastEval = (window as any)._lastEval || [];
+      (window as any)._lastEval.push({ id: s.id, dayMatch: isDayMatch, timeMatch: isTimeMatch, start, end, now: currentMinutes });
+
       return isDayMatch && isTimeMatch;
     });
 
@@ -624,16 +637,54 @@ export default function DisplayPlayerPage() {
       {/* --- Diagnostic HUD --- */}
       <div className="absolute bottom-4 left-4 z-50 pointer-events-none group">
         <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-lg p-2 text-[10px] font-mono text-white/40 group-hover:text-white/80 transition-opacity">
-          <div>PLAYING: {playlist.name}</div>
-          <div>ID: {playlist.id}</div>
+          <div>PLAYING: {playlist?.name || '---'}</div>
+          <div>ID: {playlist?.id || '---'}</div>
           <div className="flex gap-2 mt-1">
-            <span className={`px-1 rounded ${playlist.id === 'safe-recovery' ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'}`}>
-              {playlist.id === 'safe-recovery' ? 'SAFE_GAP' : 'STABLE'}
+            <span className={`px-1 rounded ${playlist?.id === 'safe-recovery' ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'}`}>
+              {playlist?.id === 'safe-recovery' ? 'SAFE_GAP' : 'STABLE'}
             </span>
-            <span>{localTimeStrShort(new Date())}</span>
+            <span>{localTimeStrShort(currentTime)}</span>
           </div>
         </div>
       </div>
+
+      {showStatus && (
+        <div className="absolute inset-0 bg-black/90 p-10 text-white font-mono overflow-auto z-[9999] pointer-events-none">
+          <h1 className="text-xl font-bold border-b border-white/20 pb-2 mb-4 text-green-500">PLAYER_CORE_DIAGNOSTIC (v3.1)</h1>
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-4">
+              <section>
+                <h2 className="text-gray-500 uppercase tracking-widest text-[10px] mb-1">State_Identity</h2>
+                <div>DEVICE_ID: <span className="text-yellow-500">{deviceId}</span></div>
+                <div>ONLINE: <span className={connected ? "text-green-500" : "text-red-500"}>{connected ? "YES" : "NO"}</span></div>
+              </section>
+              <section>
+                <h2 className="text-gray-500 uppercase tracking-widest text-[10px] mb-1">Playback_Engine</h2>
+                <div>PLAYLIST: <span className="text-blue-400">{playlist?.name}</span> ({playlist?.id})</div>
+                <div>INDEX: {currentIndex} / {playlist?.items?.length || 0}</div>
+                <div>FADE: {fadeState}</div>
+                <div>MUTED: {muted ? "YES" : "NO"}</div>
+              </section>
+            </div>
+            <div className="space-y-4">
+              <section>
+                <h2 className="text-gray-500 uppercase tracking-widest text-[10px] mb-1">Scheduling_Evaluator</h2>
+                <div>SCHED_COUNT: {context?.schedules?.length || 0}</div>
+                <div className="mt-2 text-[9px] text-gray-400">
+                  {(window as any)._lastEval?.map((e: any, i: number) => (
+                    <div key={i} className="border-l border-white/10 pl-2 mb-1">
+                      {e.dayMatch && e.timeMatch ? "✅" : "❌"} Sched {e.id}: {e.start}-{e.end} (Now: {e.now}) 
+                      {!e.dayMatch && " [DAY_MISMATCH]"}
+                      {!e.timeMatch && " [TIME_MISMATCH]"}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
+          <div className="absolute top-4 right-4 text-[10px] text-gray-700">PRESS 'D' TO CLOSE</div>
+        </div>
+      )}
     </div>
   );
 }
