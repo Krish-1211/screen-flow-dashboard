@@ -113,7 +113,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
         setCurrentIndex(0);
         return activePl;
       }
-      return activePl;
+      return currentPl;
     });
   }, [currentTime, context]);
 

@@ -129,6 +129,20 @@ export default function DisplayPlayerPage() {
     };
   }, []);
 
+  // ── Inject YouTube IFrame API ──
+  useEffect(() => {
+    if (!(window as any).YT) {
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      if (firstScriptTag && firstScriptTag.parentNode) {
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+      } else {
+        document.head.appendChild(tag);
+      }
+    }
+  }, []);
+
   const preloadNextItem = useCallback((pl: Playlist, idx: number) => {
     if (!pl?.items?.length) return;
     const nextIdx = (idx + 1) % pl.items.length;
@@ -324,7 +338,7 @@ export default function DisplayPlayerPage() {
                 setCurrentIndex(0);
                 return activePl;
             }
-            return activePl; 
+            return currentPl; 
         });
       } else {
         setPlaylist(null);
@@ -441,6 +455,12 @@ export default function DisplayPlayerPage() {
       return; 
     }
 
+    if (mediaType === 'youtube') {
+      // We rely completely on the YouTube IFrame API (onStateChange === 0) to advance.
+      preloadNextItem(playlist, currentIndex);
+      return;
+    }
+
     const duration = currentItem.duration || 10;
     preloadNextItem(playlist, currentIndex);
     
@@ -474,6 +494,14 @@ export default function DisplayPlayerPage() {
       return next;
     });
   }, []);
+
+  const onYouTubePlayerStateChange = useCallback((event: any) => {
+    // 0 is ENDED
+    if (event.data === 0) {
+      console.info("[player] YouTube ended, advancing...");
+      advanceMedia();
+    }
+  }, [advanceMedia]);
 
   if (loading) {
     return (
@@ -540,7 +568,7 @@ export default function DisplayPlayerPage() {
     if (url.includes("v=")) videoId = url.split("v=")[1].split("&")[0];
     else if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
     else videoId = url;
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&controls=0&modestbranding=1&loop=1&rel=0&showinfo=0`;
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&modestbranding=1&loop=0&rel=0&showinfo=0&enablejsapi=1`;
   };
 
   return (
@@ -581,11 +609,21 @@ export default function DisplayPlayerPage() {
             </div>
           ) : isYoutube ? (
             <iframe
-              key={currentItem.id}
+              key={`${currentItem.id}-${currentIndex}`}
               src={getYoutubeEmbedUrl(mediaUrl)}
               className="w-full h-full border-none"
               allow="autoplay; encrypted-media"
               title="YouTube"
+              onLoad={(e) => {
+                // Connect and listen for events
+                if ((window as any).YT && (window as any).YT.Player) {
+                  new (window as any).YT.Player(e.currentTarget, {
+                    events: {
+                      onStateChange: onYouTubePlayerStateChange
+                    }
+                  });
+                }
+              }}
             />
           ) : isVideo ? (
             <video
