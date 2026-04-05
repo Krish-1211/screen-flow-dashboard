@@ -519,7 +519,7 @@ export default function DisplayPlayerPage() {
   if (isVideo && !mediaUrl) {
     console.error("CRITICAL: Video item has NO URL. Skipping immediately to prevent Media Error.");
     setTimeout(() => advanceMedia(), 0); 
-    return null; // Return empty to prevent <video src=""> crash
+    return <div className="fixed inset-0 bg-black" />; // 🛡️ Return solid black instead of null to prevent flash
   }
 
   const getYoutubeEmbedUrl = (url: string) => {
@@ -554,9 +554,7 @@ export default function DisplayPlayerPage() {
             transition: 'opacity 200ms ease'
           }}
         >
-          {isTransitioning ? (
-             <div className="w-full h-full bg-black transition-all" />
-          ) : isGap ? (
+          {isGap ? (
             <div className="w-full h-full bg-black flex flex-col items-center justify-center p-20 select-none">
                 {/* ⛔ PROD FIXED: Clock UI is suppressed here to prevent loop flicker. 
                     Only a simple, clean timestamp shows when content is TRULY missing. */}
