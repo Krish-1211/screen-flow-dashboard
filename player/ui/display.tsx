@@ -6,6 +6,18 @@ import { SyncManager, type SyncStatus } from "../sync/syncManager";
 import { mediaCache } from "../storage/mediaCache";
 import { playerConfig } from "../config/playerConfig";
 
+declare global {
+  interface Window {
+    onYouTubeIframeAPIReady: () => void;
+    YT: any;
+  }
+}
+
+const getYouTubeID = (url: string) => {
+  const match = url.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : null;
+};
+
 interface PlayerProps {
   deviceId: string;
   apiBaseUrl: string;
@@ -37,6 +49,33 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const syncRef = useRef<SyncManager | null>(null);
 
+  // ── Engine Core ──
+  const advanceMedia = useCallback(() => {
+    setMediaError(false);
+    setFadeState('out');
+    setTimeout(() => {
+      setPlaylist(currentPl => {
+        if (!currentPl?.items?.length || currentPl.items.length === 1) return currentPl;
+        setCurrentIndex((prev) => (prev + 1) % currentPl.items.length);
+        return currentPl;
+      });
+      setFadeState('in');
+    }, 300);
+  }, []);
+
+  const handleMediaError = useCallback(() => {
+    setMediaError(true);
+    setTimeout(advanceMedia, 5000);
+  }, [advanceMedia]);
+
+  const onYouTubePlayerStateChange = useCallback((event: any) => {
+    // 0 is ENDED
+    if (event.data === 0) {
+      console.info("[player] YouTube ended, advancing...");
+      advanceMedia();
+    }
+  }, [advanceMedia]);
+
   // ── Keyboard Controls ──
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -47,12 +86,20 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  // ── Ticker & Clock ──
+  // ── Ticker & Clock & API Injection ──
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
+    // Inject YouTube API
+    if (!window.YT) {
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    }
     return () => clearInterval(t);
   }, []);
 
+  // ── Schedule Evaluator ──
   useEffect(() => {
     if (!context) return;
     
@@ -103,42 +150,37 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
     };
   }, [deviceId, apiBaseUrl, applyContext]);
 
-  // Advance Engine
-  const advanceMedia = useCallback(() => {
-    setMediaError(false);
-    setFadeState('out');
-    setTimeout(() => {
-      setPlaylist(currentPl => {
-        if (!currentPl?.items?.length || currentPl.items.length === 1) return currentPl;
-        setCurrentIndex((prev) => (prev + 1) % currentPl.items.length);
-        return currentPl;
-      });
-      setFadeState('in');
-    }, 300);
-  }, []);
-
-  // Media Management
+  // ── Media Playback Management ──
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (!playlist?.items?.length) return;
 
     const currentItem = playlist.items[currentIndex];
-    if (playlist.items.length === 1 && currentItem?.media?.type !== 'video') return;
-
+    
+    // Safety check for video playback
     if (currentItem?.media?.type === 'video') {
-      if (videoRef.current && videoRef.current.paused) videoRef.current.play().catch(() => {});
-      return;
+      if (videoRef.current && videoRef.current.paused) {
+        videoRef.current.play().catch(() => {});
+      }
+      return; // Video uses 'onEnded' event
     }
 
+    // Special handling for YouTube
+    if (currentItem?.media?.type === 'youtube') {
+      // If user specified a duration in dashboard, respect it as a manual timeout.
+      // Otherwise, stay quiet and wait for onYouTubePlayerStateChange (0/ENDED).
+      if (currentItem.duration && currentItem.duration > 0) {
+        timerRef.current = setTimeout(advanceMedia, currentItem.duration * 1000);
+      }
+      return; 
+    }
+
+    // Default duration handling for Images/Static
     const duration = currentItem.duration || 10;
     timerRef.current = setTimeout(advanceMedia, duration * 1000);
+    
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [currentIndex, playlist, advanceMedia]);
-
-  const handleMediaError = useCallback(() => {
-    setMediaError(true);
-    setTimeout(advanceMedia, 5000);
-  }, [advanceMedia]);
 
   const handleSaveSetup = () => {
     localStorage.setItem('sf_api_url', setupUrl);
@@ -230,6 +272,23 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
             className="w-full h-full object-contain"
             onEnded={advanceMedia}
             onError={handleMediaError}
+          />
+        ) : (currentItem?.media?.type === 'youtube') ? (
+          <iframe
+            key={`${currentItem.id}-${currentIndex}`}
+            src={`https://www.youtube.com/embed/${getYouTubeID(mediaUrl)}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&enablejsapi=1`}
+            className="w-full h-full border-none"
+            allow="autoplay; encrypted-media"
+            onLoad={(e) => {
+              // Connect and listen for events
+              if (window.YT && window.YT.Player) {
+                new window.YT.Player(e.currentTarget, {
+                  events: {
+                    onStateChange: onYouTubePlayerStateChange
+                  }
+                });
+              }
+            }}
           />
         ) : (
           <img
