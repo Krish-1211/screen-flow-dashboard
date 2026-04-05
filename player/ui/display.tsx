@@ -48,9 +48,13 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
   const preloadedNextRef = useRef<HTMLImageElement | HTMLVideoElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const syncRef = useRef<SyncManager | null>(null);
+  const isTransitioningRef = useRef(false);
 
   // ── Engine Core ──
   const advanceMedia = useCallback(() => {
+    if (isTransitioningRef.current) return;
+    isTransitioningRef.current = true;
+
     setMediaError(false);
     setFadeState('out');
     setTimeout(() => {
@@ -60,6 +64,9 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
         return currentPl;
       });
       setFadeState('in');
+      setTimeout(() => {
+        isTransitioningRef.current = false;
+      }, 50);
     }, 300);
   }, []);
 

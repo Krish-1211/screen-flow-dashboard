@@ -93,10 +93,10 @@ export default function DisplayPlayerPage() {
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const pendingPlaylistRef = useRef<Playlist | null>(null);
-  const isVideoPlayingRef = useRef(false);
-  const preloadedNextRef = useRef<HTMLImageElement | HTMLVideoElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const isVideoPlayingRef = useRef(false);
+  const isTransitioningRef = useRef(false);
+  const preloadedNextRef = useRef<HTMLImageElement | HTMLVideoElement | null>(null);
 
   // ── Diagnostic Visibility ──
   useEffect(() => {
@@ -400,6 +400,9 @@ export default function DisplayPlayerPage() {
   }, [context, evaluateActivePlaylist]);
 
   const advanceMedia = useCallback(() => {
+    if (isTransitioningRef.current) return;
+    isTransitioningRef.current = true;
+
     setMediaError(false);
     isVideoPlayingRef.current = false;
     
@@ -418,6 +421,9 @@ export default function DisplayPlayerPage() {
         return currentPl;
       });
       setFadeState('in');
+      setTimeout(() => {
+        isTransitioningRef.current = false;
+      }, 50);
     }, 300); // 300ms black buffer
   }, []);
 
@@ -568,7 +574,7 @@ export default function DisplayPlayerPage() {
     if (url.includes("v=")) videoId = url.split("v=")[1].split("&")[0];
     else if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
     else videoId = url;
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=1&controls=0&modestbranding=1&loop=0&rel=0&showinfo=0&enablejsapi=1`;
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=${muted ? 1 : 0}&controls=0&modestbranding=1&loop=0&rel=0&showinfo=0&enablejsapi=1`;
   };
 
   return (
