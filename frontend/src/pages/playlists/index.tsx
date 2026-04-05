@@ -139,6 +139,15 @@ export default function PlaylistsPage() {
     }
   });
 
+  const getYoutubeThumbnail = (url: string) => {
+    let videoId = "";
+    if (!url) return "";
+    if (url.includes("v=")) videoId = url.split("v=")[1].split("&")[0];
+    else if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
+    else videoId = url;
+    return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+  };
+
   const flatPlaylists = (nodes: Playlist[]): Playlist[] => {
     let flat: Playlist[] = [];
     nodes.forEach(n => {
@@ -313,10 +322,12 @@ export default function PlaylistsPage() {
 
       return (
         <div key={node.id} className="group relative bg-secondary/20 border border-border rounded p-2 flex items-center gap-2 hover:bg-secondary/40 transition-colors" style={{ marginLeft: `${level * 12 + 16}px` }}>
-          <div className="h-10 w-12 rounded bg-secondary overflow-hidden relative shrink-0">
-            {node.thumbnail && <img src={node.thumbnail} className="absolute inset-0 w-full h-full object-cover opacity-60" />}
+          <div className="h-10 w-12 rounded bg-secondary overflow-hidden relative shrink-0 border border-border/50">
+            {(node.thumbnail || (node.type === 'youtube' && node.url)) && (
+              <img src={node.thumbnail || getYoutubeThumbnail(node.url)} className="absolute inset-0 w-full h-full object-cover opacity-60" />
+            )}
             <div className="absolute inset-0 flex items-center justify-center">
-              {node.type === "image" ? <ImageIcon className="h-4 w-4" /> : <Film className="h-4 w-4" />}
+              {node.type === "image" ? <ImageIcon className="h-4 w-4" /> : node.type === "youtube" ? <img src="https://upload.wikimedia.org/wikipedia/commons/4/42/YouTube_icon_%282013-2017%29.png" className="h-4 w-4 opacity-75" /> : <Film className="h-4 w-4" />}
             </div>
           </div>
           <div className="flex-1 min-w-0">
@@ -446,8 +457,10 @@ export default function PlaylistsPage() {
                         <div key={item.id} className="flex flex-row items-center gap-3 p-3 hover:bg-accent/10 transition-colors group">
                           <GripVertical className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground cursor-grab shrink-0" />
                           <div className="h-10 w-14 rounded bg-secondary flex items-center justify-center shrink-0 overflow-hidden relative border border-border">
-                            {m.thumbnail && <img src={m.thumbnail} alt={m.name} className="absolute inset-0 w-full h-full object-cover opacity-80" />}
-                            {m.type === "image" ? <ImageIcon className="h-4 w-4 text-muted-foreground relative z-10" /> : <Film className="h-4 w-4 text-muted-foreground relative z-10" />}
+                            {(m.thumbnail || (m.type === 'youtube' && m.url)) && (
+                              <img src={m.thumbnail || getYoutubeThumbnail(m.url)} alt={m.name} className="absolute inset-0 w-full h-full object-cover opacity-80" />
+                            )}
+                            {m.type === "image" ? <ImageIcon className="h-4 w-4 text-muted-foreground relative z-10 drop-shadow-md" /> : m.type === "youtube" ? <img src="https://upload.wikimedia.org/wikipedia/commons/4/42/YouTube_icon_%282013-2017%29.png" className="h-4 w-4 opacity-75 drop-shadow-md relative z-10" /> : <Film className="h-4 w-4 text-muted-foreground relative z-10 drop-shadow-md" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-foreground truncate">{m.name || "Unknown Media"}</p>
