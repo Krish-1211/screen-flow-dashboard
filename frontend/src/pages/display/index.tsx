@@ -364,10 +364,11 @@ export default function DisplayPlayerPage() {
 
     const watchdog = setInterval(() => {
       const lastPing = parseInt(localStorage.getItem(`sf_heartbeat_${deviceId}`) || "0");
-      if (Date.now() - lastPing > 60000) {
+      // Give it 5 minutes threshold to account for backend cold starts and transient network drops
+      if (Date.now() - lastPing > 300000) {
         window.location.reload();
       }
-    }, 15000);
+    }, 60000);
 
     const handleOnline = () => setConnected(true);
     const handleOffline = () => setConnected(false);
