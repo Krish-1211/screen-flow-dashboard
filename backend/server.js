@@ -621,6 +621,33 @@ app.delete('/media/:id', async (req, res) => {
             .eq('client_id', CLIENT_ID);
         
         if (dbError) return res.status(500).json({ error: dbError });
+
+        // --- NEW: Cascade cleanup all playlists ---
+        try {
+            const { data: playlists } = await supabase
+                .from('playlists')
+                .select('id, items')
+                .eq('client_id', CLIENT_ID);
+
+            if (playlists) {
+                for (const pl of playlists) {
+                    const originalCount = pl.items?.length || 0;
+                    const cleanedItems = (pl.items || []).filter(item => String(item.mediaId) !== String(id));
+                    
+                    // If the playlist had the deleted media, update it
+                    if (cleanedItems.length !== originalCount) {
+                        await supabase
+                            .from('playlists')
+                            .update({ items: cleanedItems })
+                            .eq('id', pl.id);
+                        
+                        logger.info({ playlistId: pl.id, mediaId: id }, 'Cleaned up media from playlist');
+                    }
+                }
+            }
+        } catch (cascadeError) {
+            logger.error({ cascadeError, mediaId: id }, 'Cascade cleanup failed');
+        }
     }
 
     // 4. Update local JSON for safety

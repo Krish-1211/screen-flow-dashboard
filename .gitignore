@@ -15,11 +15,15 @@ lerna-debug.log*
 .env.*.local
 
 # Build
-dist
-dist_electron
-dist-ssr
-node_modules
+dist/
+**/dist_electron/
+**/dist-electron/
+dist-ssr/
+node_modules/
 *.asar
+*.exe
+*.zip
+*.blockmap
 
 # Editor directories and files
 .vscode/*
