@@ -167,11 +167,9 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
 
     // Special handling for YouTube
     if (currentItem?.media?.type === 'youtube') {
-      // If user specified a duration in dashboard, respect it as a manual timeout.
-      // Otherwise, stay quiet and wait for onYouTubePlayerStateChange (0/ENDED).
-      if (currentItem.duration && currentItem.duration > 0) {
-        timerRef.current = setTimeout(advanceMedia, currentItem.duration * 1000);
-      }
+      // We rely completely on the YouTube IFrame API (onStateChange === 0) to advance.
+      // We explicitly ignore legacy duration flags (like the default 10s) from the database
+      // to ensure the video always plays in its entirety.
       return; 
     }
 
