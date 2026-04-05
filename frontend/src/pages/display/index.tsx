@@ -269,9 +269,9 @@ export default function DisplayPlayerPage() {
            duration: 1, // 1 second buffer
            order: 1,
            media: {
-             id: 'black-media',
+             id: 'black',
              name: 'loop-gap',
-             type: 'image',
+             type: 'system_gap', // 🛡️ DRAMA-PROOF: Mark as gap so it bypasses normal media checks
              url: '/black-screen.png',
              node_type: 'file'
            }
@@ -442,9 +442,9 @@ export default function DisplayPlayerPage() {
   const handleMediaError = () => {
     const activeItem = playlist?.items?.[currentIndex];
     
-    // 🧠 Quiet skip for system buffer. No more "SYSTEM FAILURE" just because a PNG failed.
-    if (activeItem?.id === 'auto-loop-buffer') {
-      console.warn("[player] black buffer failed, skipping silently");
+    // 🛡️ NO PANIC: If it's a gap (real or injected), just move on quietly. 
+    if (activeItem?.media?.type === 'system_gap' || activeItem?.id === 'auto-loop-buffer') {
+      console.warn("[player] gap/buffer failed, skipping silently");
       advanceMedia();
       return;
     }
@@ -506,8 +506,8 @@ export default function DisplayPlayerPage() {
   const currentItem = playlist.items[currentIndex];
   const isVideo = currentItem?.media?.type === 'video';
   const isYoutube = currentItem?.media?.type === 'youtube';
-  // ⛔ CLOCK-BLOCK: Only treat as "Gap" if we are truly in a recovery/empty state
-  const isGap = currentItem?.media?.type === 'system_gap' && (playlist.id === 'safe-recovery');
+  // ⛔ DRAMA-PROOF: A gap is a gap—stop restricting it to recovery ID.
+  const isGap = currentItem?.media?.type === 'system_gap';
   const mediaUrl = currentItem?.media?.url || '';
 
   // 🧨 TRUTH-FINDER LOGS (Check console if "Media Error" appears)
@@ -556,12 +556,15 @@ export default function DisplayPlayerPage() {
         >
           {isGap ? (
             <div className="w-full h-full bg-black flex flex-col items-center justify-center p-20 select-none">
-                {/* ⛔ PROD FIXED: Clock UI is suppressed here to prevent loop flicker. 
-                    Only a simple, clean timestamp shows when content is TRULY missing. */}
-                <span className="text-white/20 text-4xl font-mono tracking-tighter">
-                  {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                </span>
-                <span className="text-white/5 text-[10px] mt-2 uppercase tracking-widest">v4.0.0-PROD FIXED</span>
+                {/* 🛡️ PROD FIXED: Absolute zero-drama rendering. No network request, no flash. */}
+                {playlist.id === 'safe-recovery' && (
+                  <>
+                    <span className="text-white/20 text-4xl font-mono tracking-tighter">
+                      {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                    </span>
+                    <span className="text-white/5 text-[10px] mt-2 uppercase tracking-widest">v4.0.0-PROD FIXED</span>
+                  </>
+                )}
             </div>
           ) : isYoutube ? (
             <iframe
