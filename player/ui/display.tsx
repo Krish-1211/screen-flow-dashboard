@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AlertTriangle, Volume2, VolumeX, WifiOff, Monitor, Settings, Save, Server } from "lucide-react";
 import type { Playlist, PlayerContext } from "@/types";
 import { evaluateActivePlaylist, localTimeStrShort, resolveSchedule, SAFE_PLACEHOLDER } from "../src/core/scheduler";
-import { SyncManager, type SyncStatus } from "../sync/syncManager";
 import { mediaCache } from "../storage/mediaCache";
 import { playerConfig } from "../config/playerConfig";
 
@@ -49,7 +48,6 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
   const containerRef = useRef<HTMLDivElement>(null);
   const preloadedNextRef = useRef<HTMLImageElement | HTMLVideoElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const syncRef = useRef<SyncManager | null>(null);
   const isTransitioningRef = useRef(false);
 
   // ── Engine Core ──
@@ -138,37 +136,36 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
   }, [currentTime, context]);
 
   // ── Sync Logic Implementation ──
-  const applyContext = useCallback((newCtx: PlayerContext) => {
-    setContext(newCtx);
-    setLoading(false);
-  }, []);
+  // ── Sync Logic Implementation (Basic Auto-Sync) ──
+  const syncData = useCallback(async () => {
+    if (!deviceId) return;
+    try {
+      console.log("Sync: Refreshing data...");
+      const response = await fetch(`${apiBaseUrl}/screens/player?device_id=${deviceId}`);
+      if (!response.ok) throw new Error("Sync failed");
+      
+      const newContext = await response.json();
+      setContext(newContext);
+      setConnected(true);
+      setLoading(false);
+    } catch (e) {
+      console.error("Sync: Error fetching context:", e);
+      setConnected(false);
+      setLoading(false);
+    }
+  }, [deviceId, apiBaseUrl]);
 
   useEffect(() => {
     if (!deviceId) return;
 
-    if (syncRef.current) syncRef.current.stop();
+    // Initial sync
+    syncData();
 
-    syncRef.current = new SyncManager(
-      deviceId,
-      apiBaseUrl,
-      applyContext,
-      (status: SyncStatus) => setConnected(status.online),
-      () => {}
-    );
+    // Polling every 60 seconds
+    const interval = setInterval(syncData, 60000);
 
-    syncRef.current.bootstrapFromLocal();
-    syncRef.current.startSyncLoop();
-
-    // Safety: If after 2 seconds we are still loading, allow showing setup
-    const loadingTimeout = setTimeout(() => {
-      setLoading(false);
-    }, 2000);
-
-    return () => {
-      syncRef.current?.stop();
-      clearTimeout(loadingTimeout);
-    };
-  }, [deviceId, apiBaseUrl, applyContext]);
+    return () => clearInterval(interval);
+  }, [deviceId, syncData]);
 
   // ── Media Playback Management ──
   useEffect(() => {
