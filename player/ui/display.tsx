@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AlertTriangle, Volume2, VolumeX, WifiOff, Monitor, Settings, Save, Server } from "lucide-react";
 import type { Playlist, PlayerContext } from "@/types";
-import { evaluateActivePlaylist, localTimeStrShort } from "../src/core/scheduler";
+import { evaluateActivePlaylist, localTimeStrShort, resolveSchedule, SAFE_PLACEHOLDER } from "../src/core/scheduler";
 import { SyncManager, type SyncStatus } from "../sync/syncManager";
 import { mediaCache } from "../storage/mediaCache";
 import { playerConfig } from "../config/playerConfig";
@@ -36,6 +36,8 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
   const [muted, setMuted] = useState(true);
   const [fadeState, setFadeState] = useState<'in' | 'out'>('in');
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentScheduleId, setCurrentScheduleId] = useState<string | number | null>(null);
+  const [mediaKey, setMediaKey] = useState(Date.now());
   
   // HUD and Setup states
   const [showStatus, setShowStatus] = useState(false);
@@ -109,19 +111,30 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
   // ── Schedule Evaluator ──
   useEffect(() => {
     if (!context) return;
-    
-    // Evaluate based on current time
-    const activePl = evaluateActivePlaylist(context);
-    
-    setPlaylist(currentPl => {
-      // Only reset the index if the playlist ID actually changes
-      if (!currentPl || activePl.id !== currentPl.id) {
-        console.info(`[player] scheduling: switching to playlist ${activePl.name}`);
-        setCurrentIndex(0);
-        return activePl;
-      }
-      return currentPl;
-    });
+
+    // 1. Resolve exact default playlist
+    const defaultPlId = context.screen.defaultPlaylistId || (context.screen as any).playlist_id;
+    const defaultPlaylist = context.playlists.find(p => String(p.id) === String(defaultPlId)) || SAFE_PLACEHOLDER();
+
+    // 2. Hydrate schedules with their playlist objects (one-time or on-demand)
+    const hydratedSchedules = context.schedules.map(s => ({
+      ...s,
+      playlist: context.playlists.find(p => String(p.id) === String(s.playlistId || s.playlist_id))
+    })).filter(s => !!s.playlist) as any[];
+
+    // 3. Resolve using the specified function
+    const resolved = resolveSchedule(hydratedSchedules, new Date(), defaultPlaylist);
+
+    // 4. Detect schedule change
+    if (resolved.id !== currentScheduleId) {
+      console.log("Schedule changed:", currentScheduleId, "→", resolved.id);
+      setCurrentScheduleId(resolved.id);
+      setCurrentIndex(0);
+      setMediaKey(Date.now());
+    }
+
+    // 5. Always update playlist (to respect latest sync data)
+    setPlaylist(resolved.playlist);
   }, [currentTime, context]);
 
   // ── Sync Logic Implementation ──
@@ -270,7 +283,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
       >
         {isVideo ? (
           <video
-            key={`${currentItem.id}-${currentIndex}`}
+            key={`${currentItem.id}-${currentIndex}-${mediaKey}`}
             ref={videoRef}
             src={mediaUrl}
             autoPlay playsInline muted={muted} loop={false}
@@ -280,7 +293,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
           />
         ) : (currentItem?.media?.type === 'youtube') ? (
           <iframe
-            key={`${currentItem.id}-${currentIndex}`}
+            key={`${currentItem.id}-${currentIndex}-${mediaKey}`}
             src={`https://www.youtube.com/embed/${getYouTubeID(mediaUrl)}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&enablejsapi=1`}
             className="w-full h-full border-none"
             allow="autoplay; encrypted-media"
@@ -297,7 +310,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
           />
         ) : (
           <img
-            key={currentItem.id}
+            key={`${currentItem.id}-${mediaKey}`}
             src={mediaUrl || '/black-screen.png'}
             className="w-full h-full object-contain bg-black"
             onError={handleMediaError}

@@ -1,4 +1,4 @@
-import { Playlist, PlayerContext } from '@/types';
+import { Playlist, PlayerContext, Schedule } from '@/types';
 
 /**
  * ── Signage Scheduler (Production Locked Logic) ──
@@ -117,4 +117,35 @@ export const evaluateActivePlaylist = (ctx: PlayerContext): Playlist => {
 
   console.warn(`[player-core] No active schedule or default found. Fallback triggered.`);
   return SAFE_PLACEHOLDER();
+};
+
+export const resolveSchedule = (schedules: Schedule[], now: Date, defaultPlaylist: Playlist): { id: string | number; playlist: Playlist } => {
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentDay = now.getDay() === 0 ? 6 : now.getDay() - 1;
+
+  // Find exactly ONE active schedule (filter by day & time)
+  const active = schedules.find(s => {
+    const days = (s.days || []).map(Number);
+    if (!days.includes(currentDay)) return false;
+
+    // Use pre-computed minutes or derive from HH:mm
+    const start = s.startMinutes ?? toMin(s.startTime);
+    const end = s.endMinutes ?? toMin(s.endTime);
+
+    // Normal switch at exact boundary (end time is exclusive)
+    return currentMinutes >= start && currentMinutes < end;
+  });
+
+  if (active && active.playlist) {
+    return { 
+      id: active.id, 
+      playlist: { ...active.playlist } // Do NOT reuse old playlist reference
+    };
+  }
+
+  // Fallback to default
+  return { 
+    id: "default", 
+    playlist: { ...defaultPlaylist } 
+  };
 };

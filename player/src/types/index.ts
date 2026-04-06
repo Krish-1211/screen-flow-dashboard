@@ -30,6 +30,9 @@ export interface Schedule {
   startTime: string; // HH:mm
   endTime: string;   // HH:mm
   days: number[];    // 0=Mon... 6=Sun
+  startMinutes?: number; // Pre-computed
+  endMinutes?: number;   // Pre-computed
+  playlist?: Playlist;   // Hydrated playlist
 }
 
 export interface PlayerContext {
