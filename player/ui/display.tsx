@@ -116,16 +116,16 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
     const defaultPlId = context.screen.defaultPlaylistId || (context.screen as any).playlist_id;
     const defaultPlaylist = context.playlists.find(p => String(p.id) === String(defaultPlId)) || SAFE_PLACEHOLDER();
 
-    // 2. Hydrate schedules with their playlist objects (one-time or on-demand)
+    // 2. Hydrate schedules with their playlist objects
     const hydratedSchedules = context.schedules.map(s => ({
       ...s,
       playlist: context.playlists.find(p => String(p.id) === String(s.playlistId || s.playlist_id))
     })).filter(s => !!s.playlist) as any[];
 
-    // 3. Resolve using the specified function
-    const resolved = resolveSchedule(hydratedSchedules, new Date(), defaultPlaylist);
+    // 3. Resolve using current time as single source of truth
+    const resolved = resolveSchedule(hydratedSchedules, currentTime, defaultPlaylist);
 
-    // 4. Detect schedule change
+    // 4. Detect schedule change and reset playback if needed
     if (resolved.id !== currentScheduleId) {
       console.log("Schedule changed:", currentScheduleId, "→", resolved.id);
       setCurrentScheduleId(resolved.id);
@@ -133,7 +133,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
       setMediaKey(Date.now());
     }
 
-    // 5. Always update playlist (to respect latest sync data)
+    // 5. Always update playlist from resolved (to respect latest sync data)
     setPlaylist(resolved.playlist);
   }, [currentTime, context]);
 
