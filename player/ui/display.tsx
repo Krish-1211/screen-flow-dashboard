@@ -124,16 +124,19 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
     // 3. Resolve using current time as single source of truth
     const resolved = resolveSchedule(hydratedSchedules, currentTime, defaultPlaylist);
 
-    // 4. Detect schedule change and reset playback if needed
+    // 4. Detect schedule change and reset playback
     if (resolved.id !== currentScheduleId) {
       console.log("Schedule changed:", currentScheduleId, "→", resolved.id);
       setCurrentScheduleId(resolved.id);
       setCurrentIndex(0);
       setMediaKey(Date.now());
+      
+      // Update playlist only on schedule change or deep content change
+      setPlaylist(prev => {
+        const isDifferent = JSON.stringify(prev) !== JSON.stringify(resolved.playlist);
+        return isDifferent ? resolved.playlist : prev;
+      });
     }
-
-    // 5. Always update playlist from resolved (to respect latest sync data)
-    setPlaylist(resolved.playlist);
   }, [currentTime, context]);
 
   // ── Sync Logic Implementation ──
