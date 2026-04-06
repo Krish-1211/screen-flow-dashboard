@@ -29,6 +29,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
   const [currentIndex, setCurrentIndex] = useState(0);
   const [connected, setConnected] = useState(navigator.onLine);
   const [context, setContext] = useState<PlayerContext | null>(null);
+  const [contextHash, setContextHash] = useState<string | null>(null);
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [loading, setLoading] = useState(true);
   const [mediaError, setMediaError] = useState(false);
@@ -136,16 +137,24 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
   }, [currentTime, context]);
 
   // ── Sync Logic Implementation ──
-  // ── Sync Logic Implementation (Basic Auto-Sync) ──
+  // ── Sync Logic Implementation (Smart Auto-Sync with Change Detection) ──
   const syncData = useCallback(async () => {
     if (!deviceId) return;
     try {
-      console.log("Sync: Refreshing data...");
       const response = await fetch(`${apiBaseUrl}/screens/player?device_id=${deviceId}`);
       if (!response.ok) throw new Error("Sync failed");
       
       const newContext = await response.json();
-      setContext(newContext);
+      const newHash = JSON.stringify(newContext);
+
+      if (newHash !== contextHash) {
+        console.log("Sync: Data changed → updating");
+        setContext(newContext);
+        setContextHash(newHash);
+      } else {
+        console.log("Sync: No changes");
+      }
+      
       setConnected(true);
       setLoading(false);
     } catch (e) {
@@ -153,7 +162,7 @@ export const PlayerDisplay: React.FC<PlayerProps> = ({ deviceId: initialId, apiB
       setConnected(false);
       setLoading(false);
     }
-  }, [deviceId, apiBaseUrl]);
+  }, [deviceId, apiBaseUrl, contextHash]);
 
   useEffect(() => {
     if (!deviceId) return;
