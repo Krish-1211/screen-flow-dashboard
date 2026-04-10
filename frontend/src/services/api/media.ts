@@ -42,4 +42,8 @@ export const mediaApi = {
     delete: async (id: string | number): Promise<void> => {
         await api.delete(`/media/${id}`);
     },
+    paste: async (mediaId: string | number, targetFolderId: string | null, type: 'copy' | 'cut'): Promise<any> => {
+        const response = await api.post('/media/paste', { mediaId, targetFolderId, type });
+        return response.data;
+    }
 };

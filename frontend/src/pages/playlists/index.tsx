@@ -171,7 +171,7 @@ export default function PlaylistsPage() {
     if (!selected) return;
     const newItem = {
       id: Math.random().toString(36).substr(2, 9),
-      mediaId: m.id,
+      mediaId: (m as any).mediaId || m.id,
       duration: (m.type === 'video' || m.type === 'youtube') ? 0 : (m.duration || 10),
       media: m
     };

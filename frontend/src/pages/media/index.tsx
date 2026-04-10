@@ -1,7 +1,8 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, Fragment } from "react";
 import { 
-  Upload, Trash2, Image as ImageIcon, Film, RefreshCw, Youtube, 
-  Pencil, Folder, FolderPlus, ChevronRight, Home
+  Upload, Image as ImageIcon, Film, RefreshCw, Youtube, 
+  Pencil, Folder, FolderPlus, ChevronRight, Home,
+  Copy, Scissors, ClipboardPaste, Edit2, Trash2
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,63 @@ interface Breadcrumb {
   name: string;
 }
 
+interface Media {
+  id: string;
+  name: string;
+  type: string;
+  node_type: string;
+  url: string;
+  mediaId?: string;
+  duration?: number;
+  children_count?: number;
+}
+
+const ContextMenu = ({ x, y, onClose, onAction, item, hasClipboard }: { 
+  x: number; y: number; onClose: () => void; onAction: (action: string) => void; 
+  item: Media | null; hasClipboard: boolean 
+}) => {
+  useEffect(() => {
+    const handleClick = () => onClose();
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
+  }, [onClose]);
+
+  return (
+    <div 
+      className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1.5 min-w-[180px] animate-in fade-in zoom-in duration-100"
+      style={{ top: y, left: x }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {item && (
+        <>
+          <button onClick={() => onAction('copy')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
+            <Copy className="size-4 opacity-70" /> Copy
+          </button>
+          <button onClick={() => onAction('cut')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
+            <Scissors className="size-4 opacity-70" /> Cut
+          </button>
+        </>
+      )}
+      {hasClipboard && (
+        <button onClick={() => onAction('paste')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
+          <ClipboardPaste className="size-4 opacity-70" /> Paste
+        </button>
+      )}
+      {item && (
+        <>
+          <div className="h-px bg-border my-1" />
+          <button onClick={() => onAction('rename')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-primary transition-colors">
+            <Edit2 className="size-4" /> Rename
+          </button>
+          <button onClick={() => onAction('delete')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-destructive transition-colors">
+            <Trash2 className="size-4" /> Delete
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
+
 export default function MediaLibraryPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -31,6 +89,8 @@ export default function MediaLibraryPage() {
   // Navigation State
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([{ id: null, name: "Library" }]);
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, item: Media | null } | null>(null);
+  const [clipboard, setClipboard] = useState<{ item: Media, type: 'copy' | 'cut' } | null>(null);
   
   // Dialog/Edit State
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -39,9 +99,6 @@ export default function MediaLibraryPage() {
   const [uploadName, setUploadName] = useState("");
   const [editingMedia, setEditingMedia] = useState<any>(null);
   const [newName, setNewName] = useState("");
-
-  // DND State
-  const [draggedItemId, setDraggedItemId] = useState<string | number | null>(null);
 
   const { data: media = [], isLoading } = useQuery({
     queryKey: ['media', currentFolderId],
@@ -53,7 +110,6 @@ export default function MediaLibraryPage() {
     if (folderId === null) {
       setBreadcrumbs([{ id: null, name: "Library" }]);
     } else {
-      // Logic for adding to breadcrumbs (simplified for now)
       setBreadcrumbs(prev => {
         const idx = prev.findIndex(b => b.id === folderId);
         if (idx !== -1) return prev.slice(0, idx + 1);
@@ -121,6 +177,54 @@ export default function MediaLibraryPage() {
       toast({ title: "Media renamed" });
     }
   });
+
+  const pasteMutation = useMutation({
+    mutationFn: ({ mediaId, targetFolderId, type }: { mediaId: string; targetFolderId: string | null; type: 'copy' | 'cut' }) => 
+      mediaApi.paste(mediaId, targetFolderId, type),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+      setClipboard(null);
+      toast({ title: "Pasted successfully" });
+    }
+  });
+
+  const handleContextMenu = (e: React.MouseEvent, item: Media | null) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, item });
+  };
+
+  const handleAction = (action: string) => {
+    if (!contextMenu) return;
+    const { item } = contextMenu;
+
+    switch (action) {
+      case 'copy':
+        if (item) setClipboard({ item, type: 'copy' });
+        break;
+      case 'cut':
+        if (item) setClipboard({ item, type: 'cut' });
+        break;
+      case 'paste':
+        if (clipboard) {
+          pasteMutation.mutate({ 
+            mediaId: (clipboard.item as any).mediaId || clipboard.item.id, 
+            targetFolderId: currentFolderId, 
+            type: clipboard.type 
+          });
+        }
+        break;
+      case 'rename':
+        if (item) {
+          setEditingMedia(item);
+          setNewName(item.name);
+        }
+        break;
+      case 'delete':
+        if (item) deleteMutation.mutate(item.id);
+        break;
+    }
+    setContextMenu(null);
+  };
 
   const getYoutubeThumbnail = (url: string) => {
     let videoId = "";
@@ -252,111 +356,111 @@ export default function MediaLibraryPage() {
         </div>
 
         {/* Media Grid */}
-        {isLoading ? (
-          <div className="p-10 text-center text-muted-foreground bg-card border border-border rounded-lg">Loading...</div>
-        ) : media.length === 0 ? (
-          <div className="p-20 text-center text-muted-foreground bg-card border border-border rounded-lg border-dashed">
-            <Folder className="h-10 w-10 mx-auto mb-4 opacity-20" />
-            <p>This folder is empty.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {media.map((item: any) => {
-              const isFolder = item.node_type === 'folder';
-              
-              return (
-                <div 
-                  key={item.id} 
-                  draggable={!isFolder} // Only files are draggable for now
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("mediaId", String(item.id));
-                    e.dataTransfer.effectAllowed = "move";
-                    setDraggedItemId(item.id);
-                  }}
-                  onDragOver={(e) => {
-                    if (isFolder) {
+        <div 
+          className="min-h-[400px]"
+          onContextMenu={(e) => handleContextMenu(e, null)}
+        >
+          {isLoading ? (
+            <div className="p-10 text-center text-muted-foreground bg-card border border-border rounded-lg">Loading...</div>
+          ) : media.length === 0 ? (
+            <div className="p-20 text-center text-muted-foreground bg-card border border-border rounded-lg border-dashed">
+              <Folder className="h-10 w-10 mx-auto mb-4 opacity-20" />
+              <p>This folder is empty.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {media.map((item: any) => {
+                const isFolder = item.node_type === 'folder';
+                
+                return (
+                  <div 
+                    key={item.id} 
+                    draggable={!isFolder} 
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("mediaId", String(item.id));
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragOver={(e) => {
+                      if (isFolder) {
+                        e.preventDefault();
+                        e.currentTarget.classList.add('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
+                      }
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
+                    }}
+                    onDrop={(e) => {
                       e.preventDefault();
-                      e.currentTarget.classList.add('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
-                    }
-                  }}
-                  onDragLeave={(e) => {
-                    e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
-                    const droppedItemId = e.dataTransfer.getData("mediaId");
-                    if (isFolder && droppedItemId && droppedItemId !== String(item.id)) {
-                      moveMutation.mutate({ id: droppedItemId, parentId: String(item.id) });
-                      setDraggedItemId(null);
-                    }
-                  }}
-                  className={cn(
-                    "bg-card border border-border rounded-lg overflow-hidden group transition-all animate-fade-in cursor-pointer",
-                    isFolder ? "hover:border-primary/50" : "hover:shadow-md"
-                  )}
-                  onClick={() => isFolder && navigateToFolder(String(item.id), item.name)}
-                >
-                  <div className="aspect-video bg-secondary flex items-center justify-center relative overflow-hidden">
-                    {isFolder ? (
-                      <div className="flex flex-col items-center gap-2 group-hover:scale-110 transition-transform">
-                        <Folder className="h-12 w-12 text-primary" fill="currentColor" fillOpacity={0.2} />
-                      </div>
-                    ) : item.type === "image" ? (
-                      <img src={item.url} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
-                    ) : item.type === "youtube" ? (
-                      <img src={getYoutubeThumbnail(item.url)} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
-                    ) : (
-                      <Film className="h-8 w-8 text-muted-foreground" />
+                      e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
+                      const droppedItemId = e.dataTransfer.getData("mediaId");
+                      if (isFolder && droppedItemId && droppedItemId !== String(item.id)) {
+                        moveMutation.mutate({ id: droppedItemId, parentId: String(item.id) });
+                      }
+                    }}
+                    className={cn(
+                      "bg-card border border-border rounded-lg overflow-hidden group transition-all animate-fade-in cursor-pointer",
+                      isFolder ? "hover:border-primary/50" : "hover:shadow-md",
+                      clipboard?.item.id === item.id && "opacity-50 grayscale"
                     )}
-                    
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-                    
-                    <div className="absolute top-2 right-2 flex gap-1 z-20">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingMedia(item);
-                          setNewName(item.name);
-                        }}
-                        className="h-7 w-7 rounded-md bg-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-secondary text-foreground"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(item.id); }}
-                        className="h-7 w-7 rounded-md bg-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-white"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-
-                    {!isFolder && (
-                        <div className="absolute top-2 left-2 z-20 opacity-0 group-hover:opacity-100">
-                             <div className="bg-background/80 backdrop-blur-sm p-1 rounded-md">
-                                <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                             </div>
-                        </div>
-                    )}
-                  </div>
-                  <div className="p-3">
-                    <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                        {isFolder ? 'Folder' : item.type}
-                      </span>
+                    onClick={() => isFolder && navigateToFolder(String(item.id), item.name)}
+                    onContextMenu={(e) => {
+                      e.stopPropagation();
+                      handleContextMenu(e, item);
+                    }}
+                  >
+                    <div className="aspect-video bg-secondary flex items-center justify-center relative overflow-hidden">
                       {isFolder ? (
-                        <span className="text-[10px] text-primary font-bold">{item.children_count || 0} items</span>
+                        <div className="flex flex-col items-center gap-2 group-hover:scale-110 transition-transform">
+                          <Folder className="h-12 w-12 text-primary" fill="currentColor" fillOpacity={0.2} />
+                        </div>
+                      ) : item.type === "image" ? (
+                        <img src={item.url} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
+                      ) : item.type === "youtube" ? (
+                        <img src={getYoutubeThumbnail(item.url)} alt={item.name} className="absolute inset-0 w-full h-full object-cover" />
                       ) : (
-                        <span className="text-[10px] text-muted-foreground">{item.duration ? `${item.duration}s` : 'Static'}</span>
+                        <Film className="h-8 w-8 text-muted-foreground" />
                       )}
+                      
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity z-10" />
+                      
+                      <div className="absolute top-2 right-2 flex gap-1 z-20">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingMedia(item);
+                            setNewName(item.name);
+                          }}
+                          className="h-7 w-7 rounded-md bg-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-secondary text-foreground"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(item.id); }}
+                          className="h-7 w-7 rounded-md bg-background flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-white"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="p-3">
+                      <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
+                          {isFolder ? 'Folder' : item.type}
+                        </span>
+                        {isFolder ? (
+                          <span className="text-[10px] text-primary font-bold">{item.children_count || 0} items</span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">{item.duration ? `${item.duration}s` : 'Static'}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         <Dialog open={!!editingMedia} onOpenChange={(open) => !open && setEditingMedia(null)}>
           <DialogContent>
@@ -382,6 +486,15 @@ export default function MediaLibraryPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {contextMenu && (
+        <ContextMenu 
+          {...contextMenu} 
+          onClose={() => setContextMenu(null)}
+          onAction={handleAction}
+          hasClipboard={!!clipboard}
+        />
+      )}
     </DashboardLayout>
   );
 }
