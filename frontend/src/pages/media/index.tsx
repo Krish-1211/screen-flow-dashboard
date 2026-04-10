@@ -111,6 +111,7 @@ export default function MediaLibraryPage() {
   });
 
   const navigateToFolder = (folderId: string | null, folderName: string) => {
+    console.log(`[NAV DEBUG] Moving to: ${folderName} (ID: ${folderId})`);
     setCurrentFolderId(folderId);
     if (folderId === null) {
       setBreadcrumbs([{ id: null, name: "Library" }]);
@@ -132,8 +133,10 @@ export default function MediaLibraryPage() {
   });
 
   const moveMutation = useMutation({
-    mutationFn: ({ id, parentId }: { id: string | number, parentId: string | null }) => 
-      mediaApi.update(id, { parent_id: parentId }),
+    mutationFn: ({ id, parentId }: { id: string | number, parentId: string | null }) => {
+      console.log(`[MOVE DEBUG] Mutating Item: ${id} → Target: ${parentId}`);
+      return mediaApi.update(id, { parent_id: parentId });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       toast({ title: "Item moved" });
