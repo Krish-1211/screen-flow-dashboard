@@ -283,12 +283,14 @@ export default function MediaLibraryPage() {
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
+                      e.stopPropagation();
                       e.currentTarget.classList.remove('text-primary', 'font-bold', 'scale-110');
                       try {
                         const data = JSON.parse(e.dataTransfer.getData("text/plain"));
                         const targetId = b.id; // Breadcrumb folder ID
                         if (data.mediaId && data.mediaId !== String(targetId)) {
-                          moveMutation.mutate({ id: data.mediaId, parentId: targetId });
+                           console.log(`[DROP DEBUG] Breadcrumb Target: ${targetId}`);
+                           moveMutation.mutate({ id: data.mediaId, parentId: targetId });
                         }
                       } catch (err) {
                          console.error("Breadcrumb drop failed", err);
@@ -413,6 +415,7 @@ export default function MediaLibraryPage() {
             try {
               const data = JSON.parse(e.dataTransfer.getData("text/plain"));
               if (data.mediaId && data.mediaId !== currentFolderId) {
+                 console.log(`[DROP DEBUG] Grid Background Drop (Current: ${currentFolderId})`);
                  moveMutation.mutate({ id: data.mediaId, parentId: currentFolderId });
               }
             } catch (err) {
@@ -455,10 +458,12 @@ export default function MediaLibraryPage() {
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
+                      e.stopPropagation(); // STOP BUBBLING TO GRID
                       e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20', 'scale-[1.05]', 'z-10');
                       try {
                         const data = JSON.parse(e.dataTransfer.getData("text/plain"));
                         if (isFolder && data.mediaId && data.mediaId !== String(item.id)) {
+                          console.log(`[DROP DEBUG] Folder Target: ${item.id}`);
                           moveMutation.mutate({ id: data.mediaId, parentId: String(item.id) });
                         }
                       } catch (err) {
