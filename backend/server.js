@@ -679,8 +679,6 @@ app.put('/media/:id', async (req, res) => {
         const { id } = req.params;
         const { name, parent_id } = req.body;
 
-        // 1. Resolve 'Physical' Media ID
-        // If it's a UUID, it's a junction table reference. If it's a number/timestamp string, it's the media itself.
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
         let actualMediaId = id;
 
@@ -689,35 +687,51 @@ app.put('/media/:id', async (req, res) => {
             if (ref) actualMediaId = ref.media_id;
         }
 
-        console.log(`[MOVE DEBUG] InputID: ${id}, ResolvedMediaID: ${actualMediaId}, TargetFolder: ${parent_id}`);
-
         // A. Handle Rename
         if (name) {
-            const { error: nameError } = await supabase.from('media').update({ name }).eq('id', actualMediaId);
-            if (nameError) return res.status(500).json({ error: "Rename failed", details: nameError.message });
+            await supabase.from('media').update({ name }).eq('id', actualMediaId);
         }
 
         // B. Handle Move
         if (parent_id !== undefined) {
             const targetFolderId = (parent_id === 'root' || parent_id === null) ? null : parent_id;
 
-            // CLEAN: Remove all existing placements to avoid item duplication
-            const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
-            if (delError) return res.status(500).json({ error: "Movement cleanup failed", details: delError.message });
+            console.log("CHECK BEFORE INSERT:", {
+                mediaId: actualMediaId,
+                targetFolderId,
+                typeMedia: typeof actualMediaId,
+                typeFolder: typeof targetFolderId
+            });
 
-            // INSERT: Only if we are moving into a specific folder
+            // 🟢 STRATEGY: INSERT FIRST, DELETE LATER
+            // This prevents items from "disappearing" if the new placement fails.
+            
             if (targetFolderId) {
                 const { error: insError } = await supabase.from('folder_items').insert({
                     id: crypto.randomUUID(),
                     client_id: CLIENT_ID,
-                    media_id: actualMediaId,
-                    folder_id: targetFolderId
+                    media_id: String(actualMediaId), // Force string to avoid bigint conflict
+                    folder_id: String(targetFolderId) // Force string to avoid bigint conflict
                 });
+                
                 if (insError) {
-                    console.error("[MOVE FATAL] Insert failed:", insError);
-                    return res.status(500).json({ error: "Movement placement failed", details: insError.message });
+                    console.error("INSERT FAILED:", insError);
+                    return res.status(500).json({ 
+                      error: "Movement placement failed", 
+                      details: insError.message,
+                      hint: "Check if folder_items column types allow non-UUID strings." 
+                    });
                 }
             }
+
+            // CLEAN UP: Only after successful insert (or if moving to root)
+            // We remove ALL previous folder assignments for this media
+            const { error: delError } = await supabase.from('folder_items')
+              .delete()
+              .eq('media_id', actualMediaId)
+              .not('folder_id', 'eq', targetFolderId === null ? '___NONE___' : targetFolderId); // Don't delete the one we just created!
+            
+            if (delError) console.error("CLEANUP WARN:", delError);
             
             io.emit('media-updated');
         }
@@ -725,8 +739,8 @@ app.put('/media/:id', async (req, res) => {
         return res.json({ success: true, mediaId: actualMediaId });
 
     } catch (err) {
-        console.error("[MOVE CRASH]", err);
-        res.status(500).json({ error: "Server crashed during move/update", details: err.message });
+        console.error("CRASH:", err);
+        res.status(500).json({ error: "Server crashed during move", details: err.message });
     }
 });
 
