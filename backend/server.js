@@ -490,23 +490,24 @@ app.get('/media', async (req, res) => {
         folderQuery = folderQuery.eq('parent_id', folderId);
     }
 
-    const { data: folders, error: foldersError } = await folderQuery.order('name');
+    const { data: rawFolders, error: foldersError } = await folderQuery.order('name');
     if (foldersError) return res.status(500).json({ error: foldersError });
+    let folders = rawFolders || [];
 
     // 2. Fetch Items for current level
     let items = [];
-    if (folderId === null) {
-        // ROOT: Show media that has NO folder_items entry (as per user request)
-        // First get all items that ARE in folders
+    if (!folderId) {
+        // FETCHING ROOT
+        // Get all media that ARE in folders so we can exclude them from root
         const { data: allRefs } = await supabase.from('folder_items').select('media_id').eq('client_id', CLIENT_ID);
-        const refIds = (allRefs || []).map(r => r.media_id);
+        const refIds = (allRefs || []).map(r => String(r.media_id));
         
         let orphanQuery = supabase.from('media').select('*').eq('client_id', CLIENT_ID).eq('node_type', 'file');
         if (refIds.length > 0) {
             orphanQuery = orphanQuery.not('id', 'in', `(${refIds.join(',')})`);
         }
         const { data: orphanData } = await orphanQuery;
-        items = orphanData || [];
+        items = (orphanData || []).map(m => ({ ...m, node_type: 'file' }));
     } else {
         // INSIDE FOLDER: Fetch via folder_items
         const { data: refs, error: refsError } = await supabase
@@ -517,15 +518,28 @@ app.get('/media', async (req, res) => {
         
         if (!refsError) {
             items = (refs || []).map(ref => ({
-                ...ref.media,
+                ...(ref.media || {}),
                 id: ref.id,
-                mediaId: ref.media_id,
-                parent_id: ref.folder_id
-            }));
+                actualMediaId: ref.media_id,
+                parent_id: ref.folder_id,
+                node_type: 'file'
+            })).filter(i => i.name);
         }
     }
 
-    res.json([...folders, ...items]);
+    // Calculate folder counts
+    const { data: counts } = await supabase.from('folder_items').select('folder_id').eq('client_id', CLIENT_ID);
+    const countMap = (counts || []).reduce((acc, curr) => {
+        if (curr.folder_id) acc[curr.folder_id] = (acc[curr.folder_id] || 0) + 1;
+        return acc;
+    }, {});
+
+    const foldersWithCounts = folders.map(f => ({
+        ...f,
+        children_count: countMap[f.id] || 0
+    }));
+
+    res.json([...foldersWithCounts, ...items]);
 });
 
 app.post('/media/folder', async (req, res) => {
@@ -534,7 +548,7 @@ app.post('/media/folder', async (req, res) => {
         id: Date.now().toString(),
         client_id: CLIENT_ID,
         name: name || 'New Folder',
-        type: 'folder', // legacy compatibility if needed
+        type: 'folder',
         node_type: 'folder',
         parent_id: parent_id || null,
         url: '',
@@ -548,9 +562,9 @@ app.post('/media/folder', async (req, res) => {
 
 const sanitizeFileName = (name) => {
     return name
-        .normalize("NFKD")                  // remove weird unicode
-        .replace(/[^\w.-]/g, "_")           // replace anything not safe
-        .replace(/_+/g, "_");               // collapse multiple _
+        .normalize("NFKD")
+        .replace(/[^\w.-]/g, "_")
+        .replace(/_+/g, "_");
 };
 
 app.post('/media/upload', upload.single('file'), async (req, res) => {
@@ -664,37 +678,32 @@ app.put('/media/:id', async (req, res) => {
     if (parent_id !== undefined) {
         const targetFolderId = parent_id === 'root' ? null : parent_id;
 
-        // Fetch actual mediaId first
+        // Fetch actual mediaId first (if we were given a FolderItem ID)
         const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
-        const actualMediaId = ref ? ref.media_id : id;
+        const mediaId = ref ? ref.media_id : id;
 
-        if (targetFolderId === null) {
-            // MOVE TO ROOT: Requirement is that root items have NO folder_items entry
-            console.log(`[MOVE] Removing all references for media ${actualMediaId} to move to root`);
-            await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
-            res.json({ success: true, location: 'root' });
-        } else {
-            // MOVE TO FOLDER: Ensure exactly one reference exists
-            const { data: existingRef } = await supabase.from('folder_items').select('*').eq('id', id).maybeSingle();
+        // Requirement: To move, we MUST clear all existing folder placements for this media first
+        // unless we want it in multiple folders (but our UI currently assumes 1-to-1)
+        console.log(`[MOVE] Cleaning old references for media ${mediaId}`);
+        await supabase.from('folder_items').delete().eq('media_id', mediaId);
 
-            if (existingRef) {
-                console.log(`[MOVE] Updating folder_item ${id} to new folder ${targetFolderId}`);
-                const { error } = await supabase.from('folder_items').update({ folder_id: targetFolderId }).eq('id', id);
-                if (error) console.error("[MOVE ERROR] Update failed:", error);
-            } else {
-                console.log(`[MOVE] Creating new folder_item for media ${actualMediaId} in folder ${targetFolderId}`);
-                const { error } = await supabase.from('folder_items').insert({
-                    id: crypto.randomUUID(),
-                    client_id: CLIENT_ID,
-                    media_id: actualMediaId,
-                    folder_id: targetFolderId
-                });
-                if (error) console.error("[MOVE ERROR] Insert failed:", error);
+        if (targetFolderId) {
+            console.log(`[MOVE] Inserting new reference for media ${mediaId} into folder ${targetFolderId}`);
+            const { error: insertError } = await supabase.from('folder_items').insert({
+                id: crypto.randomUUID(),
+                client_id: CLIENT_ID,
+                media_id: mediaId,
+                folder_id: targetFolderId
+            });
+            
+            if (insertError) {
+                console.error("[MOVE ERROR] Insert failed:", insertError);
+                return res.status(500).json({ error: insertError.message });
             }
-            res.json({ success: true, folderId: targetFolderId });
         }
+        
         io.emit('media-updated');
-        return;
+        return res.json({ success: true, folderId: targetFolderId });
     }
 });
 
@@ -702,6 +711,26 @@ app.put('/media/:id', async (req, res) => {
 app.post('/media/paste', async (req, res) => {
     const { mediaId, targetFolderId, type } = req.body; // type: 'copy' or 'cut'
     const folderId = targetFolderId === 'root' ? null : targetFolderId;
+
+    if (!mediaId) return res.status(400).json({ error: "Missing mediaId" });
+
+    // Prevent duplicate placement in same folder
+    if (folderId) {
+        const { data: existing } = await supabase
+            .from('folder_items')
+            .select('*')
+            .eq('media_id', mediaId)
+            .eq('folder_id', folderId)
+            .maybeSingle();
+            
+        if (existing) {
+            if (type === 'cut') {
+                return res.json({ message: "Already there", ref: existing });
+            }
+            // For copy, we allow it? Actually junction table usually shouldn't have exact duplicates
+            return res.status(409).json({ error: "Item already exists in this folder" });
+        }
+    }
 
     if (type === 'copy') {
         const newRef = {
@@ -714,34 +743,22 @@ app.post('/media/paste', async (req, res) => {
         if (error) return res.status(500).json({ error });
         res.json(newRef);
     } else if (type === 'cut') {
-        // Move all references of this media to the new folder? 
-        // No, the user likely means move a specific reference if they right-clicked it.
-        // But for simplicity in DND/Logic, we'll move the first one we find or create new and del old.
-        const { data: existing } = await supabase
-            .from('folder_items')
-            .select('*')
-            .eq('media_id', mediaId)
-            // .eq('folder_id', sourceFolderId) // If we had it
-            .limit(1)
-            .maybeSingle();
-
-        if (existing) {
-             const { error } = await supabase
-                .from('folder_items')
-                .update({ folder_id: folderId })
-                .eq('id', existing.id);
-             if (error) return res.status(500).json({ error });
-             res.json(existing);
-        } else {
-            // New ref
+        // CLEAN references before placing in new location
+        console.log(`[CUT/PASTE] Moving media ${mediaId} to folder ${folderId}`);
+        await supabase.from('folder_items').delete().eq('media_id', mediaId);
+        
+        if (folderId) {
             const newRef = {
                 id: crypto.randomUUID(),
                 client_id: CLIENT_ID,
                 media_id: mediaId,
                 folder_id: folderId
             };
-            await supabase.from('folder_items').insert(newRef);
+            const { error } = await supabase.from('folder_items').insert(newRef);
+            if (error) return res.status(500).json({ error });
             res.json(newRef);
+        } else {
+            res.json({ success: true, location: 'root' });
         }
     }
     io.emit('media-updated');

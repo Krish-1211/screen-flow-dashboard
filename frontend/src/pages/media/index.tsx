@@ -271,8 +271,28 @@ export default function MediaLibraryPage() {
                   {i > 0 && <ChevronRight className="h-3 w-3 opacity-50" />}
                   <button 
                     onClick={() => navigateToFolder(b.id, b.name)}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('text-primary', 'font-bold', 'scale-110');
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('text-primary', 'font-bold', 'scale-110');
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('text-primary', 'font-bold', 'scale-110');
+                      try {
+                        const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+                        const targetId = b.id; // Breadcrumb folder ID
+                        if (data.mediaId && data.mediaId !== String(targetId)) {
+                          moveMutation.mutate({ id: data.mediaId, parentId: targetId });
+                        }
+                      } catch (err) {
+                         console.error("Breadcrumb drop failed", err);
+                      }
+                    }}
                     className={cn(
-                      "hover:text-primary transition-colors flex items-center gap-1",
+                      "hover:text-primary transition-all flex items-center gap-1 p-1 rounded-md",
                       i === breadcrumbs.length - 1 && "text-foreground font-medium"
                     )}
                   >
@@ -378,11 +398,24 @@ export default function MediaLibraryPage() {
             </Dialog>
           </div>
         </div>
-
+ 
         {/* Media Grid */}
         <div 
-          className="min-h-[400px]"
+          className="min-h-[500px] p-4 bg-secondary/5 rounded-xl border border-dashed border-border/50"
           onContextMenu={(e) => handleContextMenu(e, null)}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            // Drop on background = move to current folder (root if applicable)
+            e.preventDefault();
+            try {
+              const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+              if (data.mediaId && data.mediaId !== currentFolderId) {
+                 moveMutation.mutate({ id: data.mediaId, parentId: currentFolderId });
+              }
+            } catch (err) {
+              console.error("Grid drop failed", err);
+            }
+          }}
         >
           {isLoading ? (
             <div className="p-10 text-center text-muted-foreground bg-card border border-border rounded-lg">Loading...</div>
@@ -390,40 +423,48 @@ export default function MediaLibraryPage() {
             <div className="p-20 text-center text-muted-foreground bg-card border border-border rounded-lg border-dashed">
               <Folder className="h-10 w-10 mx-auto mb-4 opacity-20" />
               <p>This folder is empty.</p>
+              <p className="text-xs mt-2">Drag files here to add them to this folder</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
               {media.map((item: any) => {
                 const isFolder = item.node_type === 'folder';
                 
                 return (
                   <div 
                     key={item.id} 
-                    draggable={!isFolder} 
+                    draggable 
                     onDragStart={(e) => {
-                      e.dataTransfer.setData("mediaId", String(item.id));
+                      e.dataTransfer.setData("text/plain", JSON.stringify({ 
+                        mediaId: item.id,
+                        actualId: (item as any).mediaId || item.id 
+                      }));
                       e.dataTransfer.effectAllowed = "move";
                     }}
                     onDragOver={(e) => {
                       if (isFolder) {
                         e.preventDefault();
-                        e.currentTarget.classList.add('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
+                        e.currentTarget.classList.add('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20', 'scale-[1.05]', 'z-10');
                       }
                     }}
                     onDragLeave={(e) => {
-                      e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
+                      e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20', 'scale-[1.05]', 'z-10');
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
-                      e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20');
-                      const droppedItemId = e.dataTransfer.getData("mediaId");
-                      if (isFolder && droppedItemId && droppedItemId !== String(item.id)) {
-                        moveMutation.mutate({ id: droppedItemId, parentId: String(item.id) });
+                      e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20', 'scale-[1.05]', 'z-10');
+                      try {
+                        const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+                        if (isFolder && data.mediaId && data.mediaId !== String(item.id)) {
+                          moveMutation.mutate({ id: data.mediaId, parentId: String(item.id) });
+                        }
+                      } catch (err) {
+                        console.error("Drop failed", err);
                       }
                     }}
                     className={cn(
-                      "bg-card border border-border rounded-lg overflow-hidden group transition-all animate-fade-in cursor-pointer",
-                      isFolder ? "hover:border-primary/50" : "hover:shadow-md",
+                      "bg-card border border-border rounded-lg overflow-hidden group transition-all animate-fade-in cursor-pointer relative",
+                      isFolder ? "hover:border-primary/50 shadow-sm" : "hover:shadow-md",
                       clipboard?.item.id === item.id && "opacity-50 grayscale"
                     )}
                     onClick={() => isFolder && navigateToFolder(String(item.id), item.name)}
