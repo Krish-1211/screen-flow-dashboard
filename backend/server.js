@@ -676,114 +676,124 @@ app.post('/media/youtube', async (req, res) => {
 
 app.put('/media/:id', async (req, res) => {
     try {
-        const { name, parent_id } = req.body;
         const { id } = req.params;
+        const { name, parent_id } = req.body;
 
-        // 1. Rename logic
-        if (name) {
+        // 1. Resolve 'Physical' Media ID
+        // If it's a UUID, it's a junction table reference. If it's a number/timestamp string, it's the media itself.
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        let actualMediaId = id;
+
+        if (isUUID) {
             const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
-            const targetId = ref ? ref.media_id : id;
-            await supabase.from('media').update({ name }).eq('id', targetId);
+            if (ref) actualMediaId = ref.media_id;
         }
 
-        // 2. Move logic (The "Bulletproof" Pattern)
+        console.log(`[MOVE DEBUG] InputID: ${id}, ResolvedMediaID: ${actualMediaId}, TargetFolder: ${parent_id}`);
+
+        // A. Handle Rename
+        if (name) {
+            const { error: nameError } = await supabase.from('media').update({ name }).eq('id', actualMediaId);
+            if (nameError) return res.status(500).json({ error: "Rename failed", details: nameError.message });
+        }
+
+        // B. Handle Move
         if (parent_id !== undefined) {
-            const targetFolderId = parent_id === 'root' ? null : parent_id;
+            const targetFolderId = (parent_id === 'root' || parent_id === null) ? null : parent_id;
 
-            // Fetch actual mediaId (case: we were given a FolderItem ID)
-            const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
-            const mediaId = ref ? ref.media_id : id;
+            // CLEAN: Remove all existing placements to avoid item duplication
+            const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+            if (delError) return res.status(500).json({ error: "Movement cleanup failed", details: delError.message });
 
-            console.log(`[MOVE REQUEST] Media: ${mediaId}, Target: ${targetFolderId}`);
-
-            // Step A: Purge all existing folder relationships for this specific media
-            const { error: deleteError } = await supabase.from('folder_items').delete().eq('media_id', mediaId);
-            if (deleteError) {
-                console.error("[MOVE ERROR] Cleanup failed:", deleteError);
-                return res.status(500).json({ error: "Move cleanup failed", details: deleteError.message });
-            }
-
-            // Step B: If target is a folder (not root), create the new relationship
+            // INSERT: Only if we are moving into a specific folder
             if (targetFolderId) {
-                const { error: insertError } = await supabase.from('folder_items').insert({
+                const { error: insError } = await supabase.from('folder_items').insert({
                     id: crypto.randomUUID(),
                     client_id: CLIENT_ID,
-                    media_id: mediaId,
+                    media_id: actualMediaId,
                     folder_id: targetFolderId
                 });
-                
-                if (insertError) {
-                    console.error("[MOVE ERROR] Insert failed:", insertError);
-                    return res.status(500).json({ error: "Move placement failed", details: insertError.message });
+                if (insError) {
+                    console.error("[MOVE FATAL] Insert failed:", insError);
+                    return res.status(500).json({ error: "Movement placement failed", details: insError.message });
                 }
             }
             
             io.emit('media-updated');
-            return res.json({ success: true, folderId: targetFolderId });
         }
-        
-        res.json({ success: true });
+
+        return res.json({ success: true, mediaId: actualMediaId });
+
     } catch (err) {
-        console.error("[MOVE FATAL CRASH]", err);
-        res.status(500).json({ error: "Internal server error during move" });
+        console.error("[MOVE CRASH]", err);
+        res.status(500).json({ error: "Server crashed during move/update", details: err.message });
     }
 });
 
 // COPY/PASTE SUPPORT
 app.post('/media/paste', async (req, res) => {
-    const { mediaId, targetFolderId, type } = req.body; // type: 'copy' or 'cut'
-    const folderId = targetFolderId === 'root' ? null : targetFolderId;
+    try {
+        const { mediaId, targetFolderId, type } = req.body; // type: 'copy' or 'cut'
+        const folderId = (targetFolderId === 'root' || targetFolderId === null) ? null : targetFolderId;
 
-    if (!mediaId) return res.status(400).json({ error: "Missing mediaId" });
+        if (!mediaId) return res.status(400).json({ error: "Missing mediaId" });
 
-    // Prevent duplicate placement in same folder
-    if (folderId) {
-        const { data: existing } = await supabase
-            .from('folder_items')
-            .select('*')
-            .eq('media_id', mediaId)
-            .eq('folder_id', folderId)
-            .maybeSingle();
-            
-        if (existing) {
-            if (type === 'cut') {
-                return res.json({ message: "Already there", ref: existing });
-            }
-            // For copy, we allow it? Actually junction table usually shouldn't have exact duplicates
-            return res.status(409).json({ error: "Item already exists in this folder" });
+        // Resolve 'Physical' Media ID if a UUID was passed
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mediaId);
+        let actualMediaId = mediaId;
+        if (isUUID) {
+            const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', mediaId).maybeSingle();
+            if (ref) actualMediaId = ref.media_id;
         }
-    }
 
-    if (type === 'copy') {
-        const newRef = {
-            id: crypto.randomUUID(),
-            client_id: CLIENT_ID,
-            media_id: mediaId,
-            folder_id: folderId
-        };
-        const { error } = await supabase.from('folder_items').insert(newRef);
-        if (error) return res.status(500).json({ error });
-        res.json(newRef);
-    } else if (type === 'cut') {
-        // CLEAN references before placing in new location
-        console.log(`[CUT/PASTE] Moving media ${mediaId} to folder ${folderId}`);
-        await supabase.from('folder_items').delete().eq('media_id', mediaId);
-        
+        console.log(`[PASTE DEBUG] Type: ${type}, InputMediaID: ${mediaId}, ActualID: ${actualMediaId}, TargetFolder: ${folderId}`);
+
+        // Prevent duplicate placement in same folder
         if (folderId) {
-            const newRef = {
-                id: crypto.randomUUID(),
-                client_id: CLIENT_ID,
-                media_id: mediaId,
-                folder_id: folderId
-            };
-            const { error } = await supabase.from('folder_items').insert(newRef);
-            if (error) return res.status(500).json({ error });
-            res.json(newRef);
-        } else {
-            res.json({ success: true, location: 'root' });
+            const { data: existing } = await supabase
+                .from('folder_items')
+                .select('*')
+                .eq('media_id', actualMediaId)
+                .eq('folder_id', folderId)
+                .maybeSingle();
+                
+            if (existing) {
+                if (type === 'cut') return res.json({ message: "Already there", ref: existing });
+                return res.status(409).json({ error: "Item already exists in this folder" });
+            }
         }
+
+        if (type === 'copy') {
+            if (folderId) {
+                const { error } = await supabase.from('folder_items').insert({
+                    id: crypto.randomUUID(),
+                    client_id: CLIENT_ID,
+                    media_id: actualMediaId,
+                    folder_id: folderId
+                });
+                if (error) return res.status(500).json({ error: "Copy failed", details: error.message });
+            }
+        } else if (type === 'cut') {
+            // Cut = Move: Clear all previous references
+            await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+            
+            if (folderId) {
+                const { error } = await supabase.from('folder_items').insert({
+                    id: crypto.randomUUID(),
+                    client_id: CLIENT_ID,
+                    media_id: actualMediaId,
+                    folder_id: folderId
+                });
+                if (error) return res.status(500).json({ error: "Move placement failed", details: error.message });
+            }
+        }
+        
+        io.emit('media-updated');
+        return res.json({ success: true, type, mediaId: actualMediaId, folderId });
+    } catch (err) {
+        console.error("[PASTE CRASH]", err);
+        res.status(500).json({ error: "Server error during paste", details: err.message });
     }
-    io.emit('media-updated');
 });
 app.delete('/media/:id', async (req, res) => {
     const { id } = req.params;

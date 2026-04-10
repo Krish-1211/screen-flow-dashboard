@@ -288,9 +288,9 @@ export default function MediaLibraryPage() {
                       try {
                         const data = JSON.parse(e.dataTransfer.getData("text/plain"));
                         const targetId = b.id; // Breadcrumb folder ID
-                        if (data.mediaId && data.mediaId !== String(targetId)) {
+                        if (data.targetMediaId && data.targetMediaId !== String(targetId)) {
                            console.log(`[DROP DEBUG] Breadcrumb Target: ${targetId}`);
-                           moveMutation.mutate({ id: data.mediaId, parentId: targetId });
+                           moveMutation.mutate({ id: data.targetMediaId, parentId: targetId });
                         }
                       } catch (err) {
                          console.error("Breadcrumb drop failed", err);
@@ -414,9 +414,9 @@ export default function MediaLibraryPage() {
             e.preventDefault();
             try {
               const data = JSON.parse(e.dataTransfer.getData("text/plain"));
-              if (data.mediaId && data.mediaId !== currentFolderId) {
+              if (data.targetMediaId && data.targetMediaId !== currentFolderId) {
                  console.log(`[DROP DEBUG] Grid Background Drop (Current: ${currentFolderId})`);
-                 moveMutation.mutate({ id: data.mediaId, parentId: currentFolderId });
+                 moveMutation.mutate({ id: data.targetMediaId, parentId: currentFolderId });
               }
             } catch (err) {
               console.error("Grid drop failed", err);
@@ -441,9 +441,13 @@ export default function MediaLibraryPage() {
                     key={item.id} 
                     draggable 
                     onDragStart={(e) => {
+                      // We provide two IDs: 
+                      // 1. mediaId: The ID from the list (could be FolderItem UUID)
+                      // 2. targetMediaId: The actual file ID from the 'media' table
+                      const targetMediaId = (item as any).actualMediaId || item.id;
                       e.dataTransfer.setData("text/plain", JSON.stringify({ 
                         mediaId: item.id,
-                        actualId: (item as any).mediaId || item.id 
+                        targetMediaId: targetMediaId
                       }));
                       e.dataTransfer.effectAllowed = "move";
                     }}
@@ -462,9 +466,9 @@ export default function MediaLibraryPage() {
                       e.currentTarget.classList.remove('border-primary', 'bg-primary/5', 'ring-2', 'ring-primary/20', 'scale-[1.05]', 'z-10');
                       try {
                         const data = JSON.parse(e.dataTransfer.getData("text/plain"));
-                        if (isFolder && data.mediaId && data.mediaId !== String(item.id)) {
-                          console.log(`[DROP DEBUG] Folder Target: ${item.id}`);
-                          moveMutation.mutate({ id: data.mediaId, parentId: String(item.id) });
+                        if (isFolder && data.targetMediaId && data.targetMediaId !== String(item.id)) {
+                          console.log(`[DROP DEBUG] Target Media: ${data.targetMediaId} → Folder: ${item.id}`);
+                          moveMutation.mutate({ id: data.targetMediaId, parentId: String(item.id) });
                         }
                       } catch (err) {
                         console.error("Drop failed", err);
