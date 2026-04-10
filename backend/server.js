@@ -673,53 +673,60 @@ app.post('/media/youtube', async (req, res) => {
     io.emit('media-updated');
     res.json(mediaRecord);
 });
+
 app.put('/media/:id', async (req, res) => {
-    const { name, parent_id } = req.body;
-    const { id } = req.params;
+    try {
+        const { name, parent_id } = req.body;
+        const { id } = req.params;
 
-    // 1. Is it a rename of a folder or media?
-    if (name) {
-        // Try searching as folder_item first
-        const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
-        const targetId = ref ? ref.media_id : id;
-        await supabase.from('media').update({ name }).eq('id', targetId);
-    }
+        // 1. Rename logic
+        if (name) {
+            const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
+            const targetId = ref ? ref.media_id : id;
+            await supabase.from('media').update({ name }).eq('id', targetId);
+        }
 
-    // 2. Is it a move (via drag and drop)?
-    if (parent_id !== undefined) {
-        const targetFolderId = parent_id === 'root' ? null : parent_id;
+        // 2. Move logic (The "Bulletproof" Pattern)
+        if (parent_id !== undefined) {
+            const targetFolderId = parent_id === 'root' ? null : parent_id;
 
-        // Fetch actual mediaId first (if we were given a FolderItem ID)
-        const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
-        const mediaId = ref ? ref.media_id : id;
+            // Fetch actual mediaId (case: we were given a FolderItem ID)
+            const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
+            const mediaId = ref ? ref.media_id : id;
 
-        console.log(`[MOVE DEBUG] MediaID: ${mediaId}, TargetFolder: ${targetFolderId}, ParentIDPayload: ${parent_id}`);
+            console.log(`[MOVE REQUEST] Media: ${mediaId}, Target: ${targetFolderId}`);
 
-        // Requirement: To move, we MUST clear all existing folder placements for this media first
-        // unless we want it in multiple folders (but our UI currently assumes 1-to-1)
-        console.log(`[MOVE] Cleaning old references for media ${mediaId}`);
-        await supabase.from('folder_items').delete().eq('media_id', mediaId);
-
-        if (targetFolderId) {
-            console.log(`[MOVE] Inserting new reference for media ${mediaId} into folder ${targetFolderId}`);
-            const { error: insertError } = await supabase.from('folder_items').insert({
-                id: crypto.randomUUID(),
-                client_id: CLIENT_ID,
-                media_id: mediaId,
-                folder_id: targetFolderId
-            });
-            
-            if (insertError) {
-                console.error("[MOVE ERROR] Insert failed:", insertError);
-                return res.status(500).json({ error: insertError.message });
+            // Step A: Purge all existing folder relationships for this specific media
+            const { error: deleteError } = await supabase.from('folder_items').delete().eq('media_id', mediaId);
+            if (deleteError) {
+                console.error("[MOVE ERROR] Cleanup failed:", deleteError);
+                return res.status(500).json({ error: "Move cleanup failed", details: deleteError.message });
             }
+
+            // Step B: If target is a folder (not root), create the new relationship
+            if (targetFolderId) {
+                const { error: insertError } = await supabase.from('folder_items').insert({
+                    id: crypto.randomUUID(),
+                    client_id: CLIENT_ID,
+                    media_id: mediaId,
+                    folder_id: targetFolderId
+                });
+                
+                if (insertError) {
+                    console.error("[MOVE ERROR] Insert failed:", insertError);
+                    return res.status(500).json({ error: "Move placement failed", details: insertError.message });
+                }
+            }
+            
+            io.emit('media-updated');
+            return res.json({ success: true, folderId: targetFolderId });
         }
         
-        io.emit('media-updated');
-        return res.json({ success: true, folderId: targetFolderId });
+        res.json({ success: true });
+    } catch (err) {
+        console.error("[MOVE FATAL CRASH]", err);
+        res.status(500).json({ error: "Internal server error during move" });
     }
-    
-    res.json({ success: true });
 });
 
 // COPY/PASTE SUPPORT
