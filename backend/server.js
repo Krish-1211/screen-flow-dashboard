@@ -696,42 +696,39 @@ app.put('/media/:id', async (req, res) => {
         if (parent_id !== undefined) {
             const targetFolderId = (parent_id === 'root' || parent_id === null) ? null : parent_id;
 
-            console.log("CHECK BEFORE INSERT:", {
-                mediaId: actualMediaId,
-                targetFolderId,
-                typeMedia: typeof actualMediaId,
-                typeFolder: typeof targetFolderId
-            });
+            console.log(`[CONSISTENCY CHECK] Moving ${actualMediaId} to ${targetFolderId}`);
 
-            // 🟢 STRATEGY: INSERT FIRST, DELETE LATER
-            // This prevents items from "disappearing" if the new placement fails.
-            
+            // 1. Verify Media Exists
+            const { data: mediaItem } = await supabase.from('media').select('id').eq('id', actualMediaId).maybeSingle();
+            if (!mediaItem) return res.status(404).json({ error: "Source media item not found in database.", mediaId: actualMediaId });
+
+            // 2. Verify Target Folder Exists (if not root)
+            if (targetFolderId) {
+                const { data: folderItem } = await supabase.from('media').select('id').eq('id', targetFolderId).maybeSingle();
+                if (!folderItem) return res.status(400).json({ error: "Target folder does not exist.", folderId: targetFolderId });
+            }
+
+            // 🟢 ATOMIC MOVE: DELETE OLD -> INSERT NEW
+            const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+            if (delError) console.error("DEL WARN:", delError);
+
             if (targetFolderId) {
                 const { error: insError } = await supabase.from('folder_items').insert({
                     id: crypto.randomUUID(),
                     client_id: CLIENT_ID,
-                    media_id: String(actualMediaId), // Force string to avoid bigint conflict
-                    folder_id: String(targetFolderId) // Force string to avoid bigint conflict
+                    media_id: String(actualMediaId),
+                    folder_id: String(targetFolderId)
                 });
                 
                 if (insError) {
-                    console.error("INSERT FAILED:", insError);
+                    console.error("PLACEMENT FAILED:", insError);
                     return res.status(500).json({ 
-                      error: "Movement placement failed", 
+                      error: "Database insertion failed", 
                       details: insError.message,
-                      hint: "Check if folder_items column types allow non-UUID strings." 
+                      hint: "Check for unique constraints on media_id or column type mismatches." 
                     });
                 }
             }
-
-            // CLEAN UP: Only after successful insert (or if moving to root)
-            // We remove ALL previous folder assignments for this media
-            const { error: delError } = await supabase.from('folder_items')
-              .delete()
-              .eq('media_id', actualMediaId)
-              .not('folder_id', 'eq', targetFolderId === null ? '___NONE___' : targetFolderId); // Don't delete the one we just created!
-            
-            if (delError) console.error("CLEANUP WARN:", delError);
             
             io.emit('media-updated');
         }
@@ -739,7 +736,7 @@ app.put('/media/:id', async (req, res) => {
         return res.json({ success: true, mediaId: actualMediaId });
 
     } catch (err) {
-        console.error("CRASH:", err);
+        console.error("MOVE CRASH:", err);
         res.status(500).json({ error: "Server crashed during move", details: err.message });
     }
 });
