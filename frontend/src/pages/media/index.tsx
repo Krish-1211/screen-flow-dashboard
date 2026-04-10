@@ -75,6 +75,11 @@ const ContextMenu = ({ x, y, onClose, onAction, item, hasClipboard }: {
           <button onClick={() => onAction('delete')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-destructive transition-colors">
             <Trash2 className="size-4" /> Delete
           </button>
+          {item.node_type === 'file' && (
+            <button onClick={() => onAction('delete-permanent')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-xs font-bold text-destructive/70 transition-colors uppercase tracking-tight">
+              <Trash2 className="size-3" /> System Wipe
+            </button>
+          )}
         </>
       )}
     </div>
@@ -222,15 +227,34 @@ export default function MediaLibraryPage() {
       case 'delete':
         if (item) deleteMutation.mutate(item.id);
         break;
+      case 'delete-permanent':
+        if (item && confirm("Are you sure? This will remove the file from ALL folders and playlists permanently.")) {
+           const id = (item as any).mediaId || item.id;
+           // We'll need a way to pass permanent=true to the delete mutation
+           // I'll adjust the mediaApi service next
+           deleteMutation.mutate(`${id}?permanent=true`);
+        }
+        break;
     }
     setContextMenu(null);
   };
 
   const getYoutubeThumbnail = (url: string) => {
-    let videoId = "";
-    if (url.includes("v=")) videoId = url.split("v=")[1].split("&")[0];
-    else if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
-    else videoId = url;
+    if (!url) return "/placeholder-youtube.png";
+    
+    // Robust extraction regex
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    const videoId = (match && match[2].length === 11) ? match[2] : null;
+
+    if (!videoId) {
+        // Fallback: check if the URL itself is the ID
+        if (url.length === 11 && !url.includes("/") && !url.includes(".")) {
+            return `https://img.youtube.com/vi/${url}/hqdefault.jpg`;
+        }
+        return "/placeholder-youtube.png";
+    }
+
     return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   };
 

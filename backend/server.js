@@ -440,7 +440,44 @@ app.get('/media', async (req, res) => {
     // Normalize parent_id
     const folderId = parent_id === 'root' ? null : (parent_id || null);
 
-    // 1. Fetch Folders (Folders are in 'media' table with node_type='folder')
+    if (tree === 'true') {
+        // Fetch ALL folders and ALL references for a complete tree
+        const { data: allFolders } = await supabase
+            .from('media')
+            .select('*')
+            .eq('client_id', CLIENT_ID)
+            .eq('node_type', 'folder')
+            .order('name');
+
+        const { data: allRefs } = await supabase
+            .from('folder_items')
+            .select('*, media:media_id(*)')
+            .eq('client_id', CLIENT_ID);
+
+        const items = (allRefs || []).map(ref => ({
+            ...ref.media,
+            id: ref.id,
+            mediaId: ref.media_id,
+            parent_id: ref.folder_id,
+            node_type: 'file'
+        }));
+
+        // Items and folders combine to form the tree
+        const treeData = transformToTree([...(allFolders || []), ...items]);
+        
+        // Root orphan media (media with NO folder_items entries)
+        const refMediaIds = (allRefs || []).map(r => r.media_id);
+        const { data: orphans } = await supabase
+            .from('media')
+            .select('*')
+            .eq('client_id', CLIENT_ID)
+            .eq('node_type', 'file')
+            .not('id', 'in', `(${refMediaIds.join(',') || '0'})`);
+
+        return res.json([...treeData, ...(orphans || [])]);
+    }
+
+    // 1. Fetch Folders for current level
     let folderQuery = supabase
         .from('media')
         .select('*')
@@ -456,53 +493,39 @@ app.get('/media', async (req, res) => {
     const { data: folders, error: foldersError } = await folderQuery.order('name');
     if (foldersError) return res.status(500).json({ error: foldersError });
 
-    // 2. Fetch FolderItems (references to files)
-    let refQuery = supabase
-        .from('folder_items')
-        .select('*, media:media_id(*)')
-        .eq('client_id', CLIENT_ID);
-
-    if (folderId === null) {
-        refQuery = refQuery.is('folder_id', null);
-    } else {
-        refQuery = refQuery.eq('folder_id', folderId);
-    }
-
-    const { data: refs, error: refsError } = await refQuery;
-    
+    // 2. Fetch Items for current level
     let items = [];
-    if (refsError) {
-        // Fallback to legacy parent_id if table doesn't exist yet
-        logger.warn('folder_items fetch failed, falling back to media parent_id');
-        let legacyQuery = supabase
-            .from('media')
-            .select('*')
-            .eq('client_id', CLIENT_ID)
-            .eq('node_type', 'file');
+    if (folderId === null) {
+        // ROOT: Show media that has NO folder_items entry (as per user request)
+        // First get all items that ARE in folders
+        const { data: allRefs } = await supabase.from('folder_items').select('media_id').eq('client_id', CLIENT_ID);
+        const refIds = (allRefs || []).map(r => r.media_id);
         
-        if (folderId === null) {
-            legacyQuery = legacyQuery.is('parent_id', null);
-        } else {
-            legacyQuery = legacyQuery.eq('parent_id', folderId);
+        let orphanQuery = supabase.from('media').select('*').eq('client_id', CLIENT_ID).eq('node_type', 'file');
+        if (refIds.length > 0) {
+            orphanQuery = orphanQuery.not('id', 'in', `(${refIds.join(',')})`);
         }
-        const { data: legacyData } = await legacyQuery;
-        items = legacyData || [];
+        const { data: orphanData } = await orphanQuery;
+        items = orphanData || [];
     } else {
-        items = (refs || []).map(ref => ({
-            ...ref.media,
-            id: ref.id, // Reference ID for deletion/moving
-            mediaId: ref.media_id, // Metadata for playlists
-            folder_item_id: ref.id,
-            parent_id: ref.folder_id
-        }));
+        // INSIDE FOLDER: Fetch via folder_items
+        const { data: refs, error: refsError } = await supabase
+            .from('folder_items')
+            .select('*, media:media_id(*)')
+            .eq('client_id', CLIENT_ID)
+            .eq('folder_id', folderId);
+        
+        if (!refsError) {
+            items = (refs || []).map(ref => ({
+                ...ref.media,
+                id: ref.id,
+                mediaId: ref.media_id,
+                parent_id: ref.folder_id
+            }));
+        }
     }
 
-    const allData = [...folders, ...items];
-
-    if (tree === 'true') {
-        return res.json(transformToTree(allData));
-    }
-    res.json(allData);
+    res.json([...folders, ...items]);
 });
 
 app.post('/media/folder', async (req, res) => {
@@ -589,79 +612,80 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
     res.json(mediaRecord);
 });
 app.post('/media/youtube', async (req, res) => {
+    // Extract YouTube ID for clean storage/preview
+    const extractId = (url) => {
+        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+        const match = url.match(regExp);
+        return (match && match[2].length === 11) ? match[2] : url;
+    };
+
+    const youtubeId = extractId(req.body.url);
+
     const mediaRecord = {
         id: Date.now().toString(),
         client_id: CLIENT_ID,
-        name: req.body.name || "YouTube",
+        name: req.body.name || "YouTube Video",
         type: 'youtube',
         node_type: 'file',
         parent_id: null,
-        url: req.body.url,
+        url: req.body.url, // Original URL preserved
         size: 0
     };
 
-    // 1. Save to Supabase
     const { error: dbError } = await supabase.from('media').insert(mediaRecord);
-    if (dbError) {
-        logger.error({ error: dbError, media: mediaRecord }, 'YouTube insert to Supabase failed');
-        return res.status(500).json({ error: dbError });
+    if (dbError) return res.status(500).json({ error: dbError });
+
+    const folderId = req.body.parent_id === 'root' ? null : (req.body.parent_id || null);
+    if (folderId) {
+        await supabase.from('folder_items').insert({
+            id: crypto.randomUUID(),
+            client_id: CLIENT_ID,
+            media_id: mediaRecord.id,
+            folder_id: folderId
+        });
     }
 
-    // Create a reference in the folder
-    const folderId = req.body.parent_id === 'root' ? null : (req.body.parent_id || null);
-    await supabase.from('folder_items').insert({
-        id: crypto.randomUUID(),
-        client_id: CLIENT_ID,
-        media_id: mediaRecord.id,
-        folder_id: folderId
-    });
-
-    // 2. Save to local JSON for safety
-    const db = readDB();
-    if (!db.media) db.media = [];
-    db.media.push(media);
-    writeDB(db);
-
     io.emit('media-updated');
-    res.json(media);
+    res.json(mediaRecord);
 });
 app.put('/media/:id', async (req, res) => {
     const { name, parent_id } = req.body;
     const { id } = req.params;
 
-    // Check if it's a FolderItem or Media
-    const { data: folderItem } = await supabase.from('folder_items').select('*').eq('id', id).maybeSingle();
-    
-    if (folderItem) {
-        // It's a reference move OR a rename
-        if (parent_id !== undefined) {
-            const newFolderId = parent_id === 'root' ? null : parent_id;
-            await supabase.from('folder_items').update({ folder_id: newFolderId }).eq('id', id);
-        }
-        if (name !== undefined) {
-            // Rename the underlying media
-            await supabase.from('media').update({ name }).eq('id', folderItem.media_id);
-        }
-        res.json({ success: true });
-    } else {
-        // It's a primary media or folder
-        const updates = {};
-        if (name !== undefined) updates.name = name;
-        if (parent_id !== undefined) updates.parent_id = parent_id === 'root' ? null : parent_id;
+    // 1. Is it a rename of a folder or media?
+    if (name) {
+        // Try searching as folder_item first
+        const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
+        const targetId = ref ? ref.media_id : id;
+        await supabase.from('media').update({ name }).eq('id', targetId);
+    }
 
-        const { data: updated, error } = await supabase
-            .from('media')
-            .update(updates)
-            .eq('id', id)
-            .eq('client_id', CLIENT_ID)
-            .select()
-            .maybeSingle();
+    // 2. Is it a move (via drag and drop)?
+    if (parent_id !== undefined) {
+        const targetFolderId = parent_id === 'root' ? null : parent_id;
 
-        if (error) return res.status(500).json({ error });
-        res.json(updated);
+        // Requirement: A media item exists in ONLY ONE folder_items entry at a time
+        // If we move a Media object (orphan) -> create ref
+        // If we move a FolderItem -> update folderId
+        
+        const { data: existingRef } = await supabase.from('folder_items').select('*').eq('id', id).maybeSingle();
+
+        if (existingRef) {
+            // Update reference location
+            await supabase.from('folder_items').update({ folder_id: targetFolderId }).eq('id', id);
+        } else {
+            // It was an orphan in root, now it gets a home
+            await supabase.from('folder_items').insert({
+                id: crypto.randomUUID(),
+                client_id: CLIENT_ID,
+                media_id: id,
+                folder_id: targetFolderId
+            });
+        }
     }
 
     io.emit('media-updated');
+    res.json({ success: true });
 });
 
 // COPY/PASTE SUPPORT
@@ -714,95 +738,63 @@ app.post('/media/paste', async (req, res) => {
 });
 app.delete('/media/:id', async (req, res) => {
     const { id } = req.params;
+    const { permanent } = req.query;
 
-    // 1. Check if it's a folder or a file reference or an actual media
-    const { data: item, error: getError } = await supabase
-        .from('media')
-        .select('*')
-        .eq('id', id)
-        .eq('client_id', CLIENT_ID)
-        .maybeSingle();
+    // 1. Try to find as a FolderItem (reference)
+    const { data: folderItem } = await supabase.from('folder_items').select('*').eq('id', id).maybeSingle();
 
-    if (getError) return res.status(500).json({ error: getError });
-
-    if (item && item.node_type === 'folder') {
-        // Handle folder deletion (recursive-ish)
-        // Move children items to parent of deleted folder
-        const newParent = item.parent_id || null;
-        await supabase.from('media').update({ parent_id: newParent }).eq('parent_id', id);
-        await supabase.from('folder_items').update({ folder_id: newParent }).eq('folder_id', id);
+    if (folderItem) {
+        // Standard delete = Remove from folder (Only delete the folder_items entry)
+        await supabase.from('folder_items').delete().eq('id', id);
         
-        await supabase.from('media').delete().eq('id', id);
-    } else {
-        // It's a file. The ID here could be a Media ID or a FolderItem ID.
-        // If the URL is provided in the query, or if we find it as a FolderItem.
-        
-        // Try to delete from folder_items first if it's a reference
-        const { data: folderItem } = await supabase
-            .from('folder_items')
-            .select('*')
-            .eq('id', id)
-            .maybeSingle();
-
-        let actualMediaId = id;
-        if (folderItem) {
-            actualMediaId = folderItem.media_id;
-            await supabase.from('folder_items').delete().eq('id', id);
-        } else {
-            // It might be a direct media ID (legacy or permanent delete)
-            await supabase.from('folder_items').delete().eq('media_id', id);
+        if (permanent === 'true') {
+            // Explicitly delete the underlying media record
+            await deleteMediaPermanently(folderItem.media_id);
         }
-
-        // Permanent deletion check: only delete Media IF no FolderItems reference it
-        const { count } = await supabase
-            .from('folder_items')
-            .select('*', { count: 'exact', head: true })
-            .eq('media_id', actualMediaId);
-
-        if (count === 0) {
-            // Delete actual media record and file
-            const { data: media } = await supabase.from('media').select('*').eq('id', actualMediaId).maybeSingle();
-            if (media) {
-                const storagePath = media.url.split('/').pop();
-                if (storagePath && media.node_type !== 'folder') {
-                    await supabase.storage.from('media').remove([storagePath]);
-                }
-                await supabase.from('media').delete().eq('id', actualMediaId);
+    } else {
+        // It might be a direct Media ID (folder or orphan)
+        const { data: media } = await supabase.from('media').select('*').eq('id', id).maybeSingle();
+        if (media) {
+            if (media.node_type === 'folder') {
+                // Delete folder and move items up to parent
+                const newParent = media.parent_id || null;
+                await supabase.from('media').update({ parent_id: newParent }).eq('parent_id', id);
+                await supabase.from('folder_items').update({ folder_id: newParent }).eq('folder_id', id);
+                await supabase.from('media').delete().eq('id', id);
+            } else {
+                // Delete orphan from root (considered permanent since it has no home)
+                await deleteMediaPermanently(id);
             }
         }
     }
 
-        // --- NEW: Cascade cleanup all playlists ---
-        try {
-            const { data: playlists } = await supabase
-                .from('playlists')
-                .select('id, items')
-                .eq('client_id', CLIENT_ID);
-
+    async function deleteMediaPermanently(mediaId) {
+        // First delete all remaining references
+        await supabase.from('folder_items').delete().eq('media_id', mediaId);
+        
+        const { data: media } = await supabase.from('media').select('*').eq('id', mediaId).maybeSingle();
+        if (media && media.node_type === 'file') {
+            // Delete from Storage if it's an uploaded file
+            if (media.url && !media.url.includes('youtube.com')) {
+                const storagePath = media.url.split('/').pop();
+                if (storagePath) {
+                    await supabase.storage.from('media').remove([storagePath]);
+                }
+            }
+            await supabase.from('media').delete().eq('id', mediaId);
+            
+            // Cleanup Playlists
+            const { data: playlists } = await supabase.from('playlists').select('id, items').eq('client_id', CLIENT_ID);
             if (playlists) {
                 for (const pl of playlists) {
-                    const originalCount = pl.items?.length || 0;
-                    const cleanedItems = (pl.items || []).filter(item => String(item.mediaId) !== String(id));
-                    
-                    // If the playlist had the deleted media, update it
-                    if (cleanedItems.length !== originalCount) {
-                        await supabase
-                            .from('playlists')
-                            .update({ items: cleanedItems })
-                            .eq('id', pl.id);
-                        
-                        logger.info({ playlistId: pl.id, mediaId: id }, 'Cleaned up media from playlist');
+                    const cleanedItems = (pl.items || []).filter(item => String(item.mediaId) !== String(mediaId));
+                    if (cleanedItems.length !== (pl.items || []).length) {
+                        await supabase.from('playlists').update({ items: cleanedItems }).eq('id', pl.id);
                     }
                 }
             }
-        } catch (cascadeError) {
-            logger.error({ cascadeError, mediaId: id }, 'Cascade cleanup failed');
         }
-
-    // 4. Update local JSON for safety
-    const db = readDB();
-    db.media = (db.media || []).filter(m => m.id !== id);
-    writeDB(db);
+    }
 
     io.emit('media-updated');
     res.status(204).send();

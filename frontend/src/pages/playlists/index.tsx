@@ -140,11 +140,17 @@ export default function PlaylistsPage() {
   });
 
   const getYoutubeThumbnail = (url: string) => {
-    let videoId = "";
-    if (!url) return "";
-    if (url.includes("v=")) videoId = url.split("v=")[1].split("&")[0];
-    else if (url.includes("youtu.be/")) videoId = url.split("youtu.be/")[1].split("?")[0];
-    else videoId = url;
+    if (!url) return "/placeholder-youtube.png";
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    const videoId = (match && match[2].length === 11) ? match[2] : null;
+
+    if (!videoId) {
+        if (url.length === 11 && !url.includes("/") && !url.includes(".")) {
+            return `https://img.youtube.com/vi/${url}/hqdefault.jpg`;
+        }
+        return "/placeholder-youtube.png";
+    }
     return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
   };
 
