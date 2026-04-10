@@ -664,28 +664,38 @@ app.put('/media/:id', async (req, res) => {
     if (parent_id !== undefined) {
         const targetFolderId = parent_id === 'root' ? null : parent_id;
 
-        // Requirement: A media item exists in ONLY ONE folder_items entry at a time
-        // If we move a Media object (orphan) -> create ref
-        // If we move a FolderItem -> update folderId
-        
-        const { data: existingRef } = await supabase.from('folder_items').select('*').eq('id', id).maybeSingle();
+        // Fetch actual mediaId first
+        const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
+        const actualMediaId = ref ? ref.media_id : id;
 
-        if (existingRef) {
-            // Update reference location
-            await supabase.from('folder_items').update({ folder_id: targetFolderId }).eq('id', id);
+        if (targetFolderId === null) {
+            // MOVE TO ROOT: Requirement is that root items have NO folder_items entry
+            console.log(`[MOVE] Removing all references for media ${actualMediaId} to move to root`);
+            await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+            res.json({ success: true, location: 'root' });
         } else {
-            // It was an orphan in root, now it gets a home
-            await supabase.from('folder_items').insert({
-                id: crypto.randomUUID(),
-                client_id: CLIENT_ID,
-                media_id: id,
-                folder_id: targetFolderId
-            });
-        }
-    }
+            // MOVE TO FOLDER: Ensure exactly one reference exists
+            const { data: existingRef } = await supabase.from('folder_items').select('*').eq('id', id).maybeSingle();
 
-    io.emit('media-updated');
-    res.json({ success: true });
+            if (existingRef) {
+                console.log(`[MOVE] Updating folder_item ${id} to new folder ${targetFolderId}`);
+                const { error } = await supabase.from('folder_items').update({ folder_id: targetFolderId }).eq('id', id);
+                if (error) console.error("[MOVE ERROR] Update failed:", error);
+            } else {
+                console.log(`[MOVE] Creating new folder_item for media ${actualMediaId} in folder ${targetFolderId}`);
+                const { error } = await supabase.from('folder_items').insert({
+                    id: crypto.randomUUID(),
+                    client_id: CLIENT_ID,
+                    media_id: actualMediaId,
+                    folder_id: targetFolderId
+                });
+                if (error) console.error("[MOVE ERROR] Insert failed:", error);
+            }
+            res.json({ success: true, folderId: targetFolderId });
+        }
+        io.emit('media-updated');
+        return;
+    }
 });
 
 // COPY/PASTE SUPPORT
