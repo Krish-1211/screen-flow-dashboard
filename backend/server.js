@@ -604,7 +604,6 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
     };
 
     const { error: dbError } = await supabase.from('media').insert(mediaRecord);
-
     if (dbError) {
         logger.error({ error: dbError, media: mediaRecord }, 'Supabase Database insert failed');
         return res.status(500).json({ 
@@ -614,15 +613,19 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
     }
 
     // CREATE FOLDER REFERENCE (Mandatory for placement)
-    const folderId = req.body.parent_id === 'root' ? null : (req.body.parent_id || null);
+    const rawTarget = req.body.parent_id;
+    const folderId = rawTarget === 'root' ? null : (rawTarget || null);
+    
+    console.log(`[UPLOAD DEBUG] File: ${mediaRecord.name}, RawTarget: ${rawTarget}, ResolvedFolder: ${folderId}`);
+
     if (folderId) {
-        console.log(`[UPLOAD] Placing new media ${mediaRecord.id} into folder ${folderId}`);
-        await supabase.from('folder_items').insert({
+        const { error: refError } = await supabase.from('folder_items').insert({
             id: crypto.randomUUID(),
             client_id: CLIENT_ID,
             media_id: mediaRecord.id,
             folder_id: folderId
         });
+        if (refError) console.error("[UPLOAD ERROR] Ref creation failed:", refError);
     }
 
     io.emit('media-updated');
@@ -652,9 +655,12 @@ app.post('/media/youtube', async (req, res) => {
     const { error: dbError } = await supabase.from('media').insert(mediaRecord);
     if (dbError) return res.status(500).json({ error: dbError });
 
-    const folderId = req.body.parent_id === 'root' ? null : (req.body.parent_id || null);
+    const rawTarget = req.body.parent_id;
+    const folderId = rawTarget === 'root' ? null : (rawTarget || null);
+    
+    console.log(`[YOUTUBE DEBUG] Video: ${mediaRecord.name}, RawTarget: ${rawTarget}, ResolvedFolder: ${folderId}`);
+
     if (folderId) {
-        console.log(`[YOUTUBE] Placing new video ${mediaRecord.id} into folder ${folderId}`);
         await supabase.from('folder_items').insert({
             id: crypto.randomUUID(),
             client_id: CLIENT_ID,
@@ -686,6 +692,8 @@ app.put('/media/:id', async (req, res) => {
         const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', id).maybeSingle();
         const mediaId = ref ? ref.media_id : id;
 
+        console.log(`[MOVE DEBUG] MediaID: ${mediaId}, TargetFolder: ${targetFolderId}, ParentIDPayload: ${parent_id}`);
+
         // Requirement: To move, we MUST clear all existing folder placements for this media first
         // unless we want it in multiple folders (but our UI currently assumes 1-to-1)
         console.log(`[MOVE] Cleaning old references for media ${mediaId}`);
@@ -709,6 +717,8 @@ app.put('/media/:id', async (req, res) => {
         io.emit('media-updated');
         return res.json({ success: true, folderId: targetFolderId });
     }
+    
+    res.json({ success: true });
 });
 
 // COPY/PASTE SUPPORT
