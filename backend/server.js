@@ -613,14 +613,17 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
         });
     }
 
-    // Create a reference in the folder
+    // CREATE FOLDER REFERENCE (Mandatory for placement)
     const folderId = req.body.parent_id === 'root' ? null : (req.body.parent_id || null);
-    await supabase.from('folder_items').insert({
-        id: crypto.randomUUID(),
-        client_id: CLIENT_ID,
-        media_id: mediaRecord.id,
-        folder_id: folderId
-    });
+    if (folderId) {
+        console.log(`[UPLOAD] Placing new media ${mediaRecord.id} into folder ${folderId}`);
+        await supabase.from('folder_items').insert({
+            id: crypto.randomUUID(),
+            client_id: CLIENT_ID,
+            media_id: mediaRecord.id,
+            folder_id: folderId
+        });
+    }
 
     io.emit('media-updated');
     res.json(mediaRecord);
@@ -651,6 +654,7 @@ app.post('/media/youtube', async (req, res) => {
 
     const folderId = req.body.parent_id === 'root' ? null : (req.body.parent_id || null);
     if (folderId) {
+        console.log(`[YOUTUBE] Placing new video ${mediaRecord.id} into folder ${folderId}`);
         await supabase.from('folder_items').insert({
             id: crypto.randomUUID(),
             client_id: CLIENT_ID,
