@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { readDB, writeDB } from './src/lib/storage.js';
 import supabase from './src/lib/supabase.js';
 
