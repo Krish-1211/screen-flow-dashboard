@@ -545,17 +545,15 @@ app.post('/media/folder', async (req, res) => {
         const folderName = name || 'New Folder';
         const resolvedParentId = (parent_id === 'root' || !parent_id) ? null : parent_id;
 
-        console.log(`[FOLDER CREATION] Syncing new folder ${folderId} across tables...`);
+        console.log(`[FOLDER_CREATE] Request: name=${folderName}, parent=${resolvedParentId}`);
 
-        // 1. Create entry in 'media' table (LEGACY PARITY)
-        // This ensures the folder exists where foreign keys or older queries might expect it.
         const mediaRecord = {
           id: folderId,
           client_id: CLIENT_ID,
           name: folderName,
           type: 'folder',
           node_type: 'folder',
-          parent_id: resolvedParentId, // Maintain hierarchy in media table for legacy support
+          parent_id: resolvedParentId,
           url: '',
           size: 0,
           created_at: new Date().toISOString()
@@ -563,11 +561,10 @@ app.post('/media/folder', async (req, res) => {
 
         const { error: mediaError } = await supabase.from('media').insert(mediaRecord);
         if (mediaError) {
-          console.error("Folder (media table) insert failed:", mediaError);
-          return res.status(500).json({ error: "Failed to create folder media record", details: mediaError });
+          console.error("[DB_ERROR] Media insert failed:", mediaError);
+          return res.status(500).json({ error: "Media table insert failed", details: mediaError });
         }
 
-        // 2. Create entry in dedicated 'folders' table (NEW SYSTEM)
         const folderRecord = {
             id: folderId,
             client_id: CLIENT_ID,
@@ -578,16 +575,16 @@ app.post('/media/folder', async (req, res) => {
 
         const { error: folderError } = await supabase.from('folders').insert(folderRecord);
         if (folderError) {
-            console.error("Folder (folders table) insert failed:", folderError);
-            // ROLLBACK media record if folder record fails
+            console.error("[DB_ERROR] Folder metadata insert failed:", folderError);
             await supabase.from('media').delete().eq('id', folderId);
-            return res.status(500).json({ error: "Failed to create folder metadata record", details: folderError });
+            return res.status(500).json({ error: "Folders table insert failed", details: folderError });
         }
 
+        console.log(`[FOLDER_CREATE] SUCCESS: ${folderId}`);
         res.json({ ...folderRecord, node_type: 'folder' });
     } catch (err) {
-        console.error("FOLDER CREATION CRASH:", err);
-        res.status(500).json({ error: "Server crashed during folder creation", details: err.message });
+        console.error("[CRASH] Folder creation:", err);
+        res.status(500).json({ error: "Server crash during folder creation", details: err.message });
     }
 });
 
@@ -797,30 +794,41 @@ app.put('/media/:id', async (req, res) => {
 // COPY/PASTE SUPPORT
 app.post('/media/paste', async (req, res) => {
     try {
-        const { mediaId, targetFolderId, type } = req.body; // type: 'copy' or 'cut'
+        const { mediaId, targetFolderId, type } = req.body;
         const folderId = (targetFolderId === 'root' || targetFolderId === null) ? null : targetFolderId;
+
+        console.log(`[PASTE] Operation started: type=${type}, media=${mediaId}, folder=${folderId}`);
 
         if (!mediaId) return res.status(400).json({ error: "Missing mediaId" });
 
-        // Resolve 'Physical' Media ID if a UUID was passed
+        // Resolve 'Physical' Media ID
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mediaId);
         let actualMediaId = mediaId;
         if (isUUID) {
             const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', mediaId).maybeSingle();
-            if (ref) actualMediaId = ref.media_id;
+            if (ref) {
+              actualMediaId = ref.media_id;
+              console.log(`[PASTE] Resolved UUID ${mediaId} to MediaID ${actualMediaId}`);
+            }
         }
 
-        console.log(`[PASTE DEBUG] Type: ${type}, InputMediaID: ${mediaId}, ActualID: ${actualMediaId}, TargetFolder: ${folderId}`);
-
-        // Prevent duplicate placement in same folder
+        // VERIFY FOLDER EXISTS
         if (folderId) {
-            const { data: existing } = await supabase
-                .from('folder_items')
-                .select('*')
-                .eq('media_id', actualMediaId)
-                .eq('folder_id', folderId)
-                .maybeSingle();
-                
+            const { data: folderExists, error: folderCheckError } = await supabase.from('folders').select('id, name').eq('id', folderId).maybeSingle();
+            if (folderCheckError) {
+              console.error("[PASTE] Error verifying folder existence:", folderCheckError);
+              return res.status(500).json({ error: "Folder verification failed", details: folderCheckError });
+            }
+            if (!folderExists) {
+              console.error(`[PASTE ERROR] Target folder ${folderId} NOT FOUND in 'folders' table.`);
+              return res.status(404).json({ error: `Destination folder ${folderId} does not exist in the database.` });
+            }
+            console.log(`[PASTE] Target folder verified: ${folderExists.name}`);
+        }
+
+        // Prevent duplicate placement
+        if (folderId) {
+            const { data: existing } = await supabase.from('folder_items').select('*').eq('media_id', actualMediaId).eq('folder_id', folderId).maybeSingle();
             if (existing) {
                 if (type === 'cut') return res.json({ message: "Already there", ref: existing });
                 return res.status(409).json({ error: "Item already exists in this folder" });
@@ -832,26 +840,33 @@ app.post('/media/paste', async (req, res) => {
                 const { error } = await supabase.from('folder_items').insert({
                     id: crypto.randomUUID(),
                     client_id: CLIENT_ID,
-                    media_id: actualMediaId,
-                    folder_id: folderId
+                    media_id: String(actualMediaId),
+                    folder_id: String(folderId)
                 });
-                if (error) return res.status(500).json({ error: "Copy failed", details: error.message });
+                if (error) {
+                  console.error("[PASTE] Copy insert failed:", error);
+                  return res.status(500).json({ error: "Copy failed", details: error });
+                }
             }
         } else if (type === 'cut') {
-            // Cut = Move: Clear all previous references
-            await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+            const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+            if (delError) console.warn("[PASTE] Cleanup warn:", delError);
             
             if (folderId) {
-                const { error } = await supabase.from('folder_items').insert({
+                const { error: insError } = await supabase.from('folder_items').insert({
                     id: crypto.randomUUID(),
                     client_id: CLIENT_ID,
-                    media_id: actualMediaId,
-                    folder_id: folderId
+                    media_id: String(actualMediaId),
+                    folder_id: String(folderId)
                 });
-                if (error) return res.status(500).json({ error: "Move placement failed", details: error.message });
+                if (insError) {
+                  console.error("[PASTE] Cut insert failed:", insError);
+                  return res.status(500).json({ error: "Move placement failed", details: insError });
+                }
             }
         }
         
+        console.log(`[PASTE] SUCCESS: Operation ${type} completed.`);
         io.emit('media-updated');
         return res.json({ success: true, type, mediaId: actualMediaId, folderId });
     } catch (err) {
