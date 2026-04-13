@@ -139,6 +139,56 @@ export default function PlaylistsPage() {
     }
   });
 
+  const reorderMutation = useMutation({
+    mutationFn: (vars: { id: string | number, orderData: { id: string | number, order: number }[] }) =>
+      playlistsApi.reorder(vars.id, vars.orderData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['playlists'] });
+    }
+  });
+
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    // Needed for Firefox
+    e.dataTransfer.setData('text/plain', String(index));
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (index !== dragOverIndex) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex || !selected) return;
+
+    const newItems = Array.from(selected.items || []);
+    const [movedItem] = newItems.splice(draggedIndex, 1);
+    newItems.splice(targetIndex, 0, movedItem);
+
+    // Prepare order data for backend
+    const orderData = newItems.map((item: any, idx) => ({
+      id: item.id,
+      order: idx
+    }));
+
+    reorderMutation.mutate({ id: selected.id, orderData });
+    
+    // Cleanup
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
   const getYoutubeThumbnail = (url: string) => {
     if (!url) return "/placeholder-youtube.png";
     const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
@@ -456,11 +506,27 @@ export default function PlaylistsPage() {
                   ) : (
                     selected.items
                       .filter((i: any) => !i.is_system) // 🛡️ Filter out loop buffers/system items
-                      .map((item: any) => {
+                      .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
+                      .map((item: any, index: number) => {
                       const m = item.media || {};
                       const isVideo = m.type === 'video' || m.type === 'youtube';
+                      const isDragging = draggedIndex === index;
+                      const isOver = dragOverIndex === index;
+
                       return (
-                        <div key={item.id} className="flex flex-row items-center gap-3 p-3 hover:bg-accent/10 transition-colors group">
+                        <div 
+                          key={item.id} 
+                          className={cn(
+                            "flex flex-row items-center gap-3 p-3 hover:bg-accent/10 transition-all group border-l-2 border-transparent",
+                            isDragging && "opacity-20",
+                            isOver && !isDragging && "border-l-primary bg-primary/5 translate-x-1"
+                          )}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, index)}
+                          onDragOver={(e) => handleDragOver(e, index)}
+                          onDrop={(e) => handleDrop(e, index)}
+                          onDragEnd={handleDragEnd}
+                        >
                           <GripVertical className="h-4 w-4 text-muted-foreground/30 group-hover:text-muted-foreground cursor-grab shrink-0" />
                           <div className="h-10 w-14 rounded bg-secondary flex items-center justify-center shrink-0 overflow-hidden relative border border-border">
                             {(m.thumbnail || (m.type === 'youtube' && m.url)) && (

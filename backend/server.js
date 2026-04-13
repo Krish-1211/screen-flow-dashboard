@@ -996,7 +996,7 @@ app.post('/playlists', async (req, res) => {
 });
 
 app.put('/playlists/:id', async (req, res) => {
-    const { name, items } = req.body;
+    const { name, items, parent_id } = req.body;
     const { id } = req.params;
 
     // 1. Check for duplicates if name is changing
@@ -1017,21 +1017,68 @@ app.put('/playlists/:id', async (req, res) => {
     const updates = {};
     if (name !== undefined) updates.name = name;
     if (items !== undefined) updates.items = items;
-    if (req.body.parent_id !== undefined) updates.parent_id = req.body.parent_id;
-    if (req.body.node_type !== undefined) updates.node_type = req.body.node_type;
+    if (parent_id !== undefined) updates.parent_id = parent_id;
 
-    const { data, error } = await supabase
+    const { data: updatedPlaylist, error } = await supabase
         .from('playlists')
         .update(updates)
         .eq('id', id)
         .eq('client_id', CLIENT_ID)
-        .select();
+        .select()
+        .single();
 
-    if (error) return res.status(500).json({ error });
-    if (!data || data.length === 0) return res.status(404).json({ error: "Playlist not found" });
+    if (error) {
+        logger.error({ error, id }, 'Playlist update failed');
+        return res.status(500).json({ error: "Failed to update playlist" });
+    }
 
-    io.emit('playlist-updated');
-    res.json(data[0]);
+    io.emit('media-updated');
+    res.json(updatedPlaylist);
+});
+
+// REORDER ENDPOINT
+app.put('/playlist/reorder', async (req, res) => {
+    try {
+        const { playlistId, orderData } = req.body; // orderData: [ { id, order }, ... ]
+        
+        if (!playlistId || !orderData) {
+            return res.status(400).json({ error: "Missing playlistId or orderData" });
+        }
+
+        // 1. Fetch current items
+        const { data: pl, error: fetchError } = await supabase
+            .from('playlists')
+            .select('items')
+            .eq('id', playlistId)
+            .maybeSingle();
+            
+        if (fetchError || !pl) return res.status(404).json({ error: "Playlist not found" });
+
+        // 2. Reorder them based on orderData
+        const currentItems = Array.from(pl.items || []);
+        const orderMap = {};
+        (orderData || []).forEach(o => { orderMap[String(o.id)] = o.order; });
+
+        currentItems.sort((a, b) => {
+            const orderA = orderMap[String(a.id)] ?? 999;
+            const orderB = orderMap[String(b.id)] ?? 999;
+            return orderA - orderB;
+        });
+
+        // 3. Update in DB
+        const { error: updateError } = await supabase
+            .from('playlists')
+            .update({ items: currentItems })
+            .eq('id', playlistId);
+
+        if (updateError) throw updateError;
+
+        io.emit('media-updated');
+        res.json({ success: true });
+    } catch (err) {
+        console.error("REORDER ERROR:", err);
+        res.status(500).json({ error: "Failed to reorder playlist" });
+    }
 });
 
 app.delete('/playlists/:id', async (req, res) => {

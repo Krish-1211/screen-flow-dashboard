@@ -70,4 +70,7 @@ export const playlistsApi = {
     delete: async (id: string | number): Promise<void> => {
         await api.delete(`/playlists/${id}`);
     },
+    reorder: async (playlistId: string | number, orderData: { id: string | number, order: number }[]): Promise<void> => {
+        await api.put('/playlist/reorder', { playlistId, orderData });
+    }
 };
