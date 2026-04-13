@@ -441,6 +441,13 @@ app.get('/media', async (req, res) => {
     // Normalize parent_id
     const folderId = (parent_id === 'root' || parent_id === 'null' || !parent_id) ? null : parent_id;
 
+    // CLEANUP: Remove any legacy folder entries from the media table to ensure separation
+    try {
+        await supabase.from('media').delete().eq('node_type', 'folder');
+    } catch (e) {
+        console.warn("Cleanup error in /media:", e.message);
+    }
+
     if (tree === 'true') {
         // 1. Fetch ALL folders (metadata)
         const { data: allFolders } = await supabase
@@ -547,36 +554,18 @@ app.post('/media/folder', async (req, res) => {
 
         console.log(`[FOLDER_CREATE] Request: name=${folderName}, parent=${resolvedParentId}`);
 
-        const mediaRecord = {
-          id: folderId,
-          client_id: CLIENT_ID,
-          name: folderName,
-          type: 'folder',
-          node_type: 'folder',
-          parent_id: resolvedParentId,
-          url: '',
-          size: 0,
-          created_at: new Date().toISOString()
-        };
-
-        const { error: mediaError } = await supabase.from('media').insert(mediaRecord);
-        if (mediaError) {
-          console.error("[DB_ERROR] Media insert failed:", mediaError);
-          return res.status(500).json({ error: "Media table insert failed", details: mediaError });
-        }
-
+        // Create entry ONLY in dedicated 'folders' table
         const folderRecord = {
             id: folderId,
             client_id: CLIENT_ID,
             name: folderName,
             parent_id: resolvedParentId,
-            created_at: mediaRecord.created_at
+            created_at: new Date().toISOString()
         };
 
         const { error: folderError } = await supabase.from('folders').insert(folderRecord);
         if (folderError) {
-            console.error("[DB_ERROR] Folder metadata insert failed:", folderError);
-            await supabase.from('media').delete().eq('id', folderId);
+            console.error("[DB_ERROR] Folder insert failed:", folderError);
             return res.status(500).json({ error: "Folders table insert failed", details: folderError });
         }
 
@@ -723,12 +712,11 @@ app.put('/media/:id', async (req, res) => {
 
         // A. Handle Rename
         if (name) {
-            // Update BOTH tables if it's a folder to maintain cross-table consistency
             if (isFolder) {
                 await supabase.from('folders').update({ name }).eq('id', actualMediaId);
+            } else {
+                await supabase.from('media').update({ name }).eq('id', actualMediaId);
             }
-            // Always update media table as it's the primary source of truth for items
-            await supabase.from('media').update({ name }).eq('id', actualMediaId);
         }
 
         // B. Handle Move
