@@ -539,18 +539,56 @@ app.get('/media', async (req, res) => {
 });
 
 app.post('/media/folder', async (req, res) => {
-    const { name, parent_id } = req.body;
-    const folder = {
-        id: Date.now().toString(),
-        client_id: CLIENT_ID,
-        name: name || 'New Folder',
-        parent_id: (parent_id === 'root' || !parent_id) ? null : parent_id,
-        created_at: new Date().toISOString()
-    };
+    try {
+        const { name, parent_id } = req.body;
+        const folderId = Date.now().toString();
+        const folderName = name || 'New Folder';
+        const resolvedParentId = (parent_id === 'root' || !parent_id) ? null : parent_id;
 
-    const { error } = await supabase.from('folders').insert(folder);
-    if (error) return res.status(500).json({ error });
-    res.json({ ...folder, node_type: 'folder' });
+        console.log(`[FOLDER CREATION] Syncing new folder ${folderId} across tables...`);
+
+        // 1. Create entry in 'media' table (LEGACY PARITY)
+        // This ensures the folder exists where foreign keys or older queries might expect it.
+        const mediaRecord = {
+          id: folderId,
+          client_id: CLIENT_ID,
+          name: folderName,
+          type: 'folder',
+          node_type: 'folder',
+          parent_id: resolvedParentId, // Maintain hierarchy in media table for legacy support
+          url: '',
+          size: 0,
+          created_at: new Date().toISOString()
+        };
+
+        const { error: mediaError } = await supabase.from('media').insert(mediaRecord);
+        if (mediaError) {
+          console.error("Folder (media table) insert failed:", mediaError);
+          return res.status(500).json({ error: "Failed to create folder media record", details: mediaError });
+        }
+
+        // 2. Create entry in dedicated 'folders' table (NEW SYSTEM)
+        const folderRecord = {
+            id: folderId,
+            client_id: CLIENT_ID,
+            name: folderName,
+            parent_id: resolvedParentId,
+            created_at: mediaRecord.created_at
+        };
+
+        const { error: folderError } = await supabase.from('folders').insert(folderRecord);
+        if (folderError) {
+            console.error("Folder (folders table) insert failed:", folderError);
+            // ROLLBACK media record if folder record fails
+            await supabase.from('media').delete().eq('id', folderId);
+            return res.status(500).json({ error: "Failed to create folder metadata record", details: folderError });
+        }
+
+        res.json({ ...folderRecord, node_type: 'folder' });
+    } catch (err) {
+        console.error("FOLDER CREATION CRASH:", err);
+        res.status(500).json({ error: "Server crashed during folder creation", details: err.message });
+    }
 });
 
 const sanitizeFileName = (name) => {
@@ -688,8 +726,12 @@ app.put('/media/:id', async (req, res) => {
 
         // A. Handle Rename
         if (name) {
-            const table = isFolder ? 'folders' : 'media';
-            await supabase.from(table).update({ name }).eq('id', actualMediaId);
+            // Update BOTH tables if it's a folder to maintain cross-table consistency
+            if (isFolder) {
+                await supabase.from('folders').update({ name }).eq('id', actualMediaId);
+            }
+            // Always update media table as it's the primary source of truth for items
+            await supabase.from('media').update({ name }).eq('id', actualMediaId);
         }
 
         // B. Handle Move
@@ -707,18 +749,38 @@ app.put('/media/:id', async (req, res) => {
 
                 // 2. Verify Target Folder Exists
                 if (targetFolderId) {
-                    const { data: targetFolder } = await supabase.from('folders').select('id').eq('id', targetFolderId).maybeSingle();
-                    if (!targetFolder) return res.status(400).json({ error: "Target folder missing", folderId: targetFolderId });
+                    const { data: targetFolder, error: folderStatusError } = await supabase.from('folders').select('id').eq('id', targetFolderId).maybeSingle();
+                    
+                    if (folderStatusError) {
+                        console.error("[MOVE] DB Error checking target folder:", folderStatusError);
+                        return res.status(500).json({ error: "Database error during folder validation", details: folderStatusError });
+                    }
+
+                    if (!targetFolder) {
+                        console.warn(`[MOVE FAILURE] Target folder ${targetFolderId} not found in 'folders' table.`);
+                        return res.status(400).json({ error: "Move destination does not exist. The folder may have been deleted.", folderId: targetFolderId });
+                    }
                 }
 
                 // 3. Clear old placements and insert new
-                await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+                const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+                if (delError) console.error("[MOVE] Cleanup warn:", delError);
+
                 if (targetFolderId) {
-                    await supabase.from('folder_items').insert({
+                    const { error: insError } = await supabase.from('folder_items').insert({
                         client_id: CLIENT_ID,
-                        media_id: actualMediaId,
-                        folder_id: targetFolderId
+                        media_id: String(actualMediaId),
+                        folder_id: String(targetFolderId)
                     });
+
+                    if (insError) {
+                        console.error("[MOVE] Placement FAILED:", insError);
+                        return res.status(500).json({ 
+                          error: "Database failed to place item in folder", 
+                          details: insError.message,
+                          code: insError.code 
+                        });
+                    }
                 }
             }
             io.emit('media-updated');
