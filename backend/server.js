@@ -508,25 +508,35 @@ app.get('/media', async (req, res) => {
         // 2. OR have an explicit 'null' folder_id entry in folder_items
         const [{ data: allMedia }, { data: allRefs }] = await Promise.all([
             supabase.from('media').select('*').eq('client_id', CLIENT_ID),
-            supabase.from('folder_items').select('media_id, folder_id').eq('client_id', CLIENT_ID)
+            supabase.from('folder_items').select('id, media_id, folder_id').eq('client_id', CLIENT_ID)
         ]);
         
-        const mediaRefs = (allRefs || []).reduce((acc, curr) => {
+        // Map references by media_id
+        const mediaRefsByMid = (allRefs || []).reduce((acc, curr) => {
             const mid = String(curr.media_id);
             if (!acc[mid]) acc[mid] = [];
-            acc[mid].push(curr.folder_id);
+            acc[mid].push(curr);
             return acc;
         }, {});
 
         items = (allMedia || [])
             .filter(m => {
-                const itemFolders = mediaRefs[String(m.id)];
+                const refs = mediaRefsByMid[String(m.id)];
                 // It's in root if it has no folders OR explicitly has a null folder
-                return !itemFolders || itemFolders.includes(null);
+                return !refs || refs.some(r => r.folder_id === null);
             })
-            .map(m => ({ ...m, node_type: 'file' }));
+            .map(m => {
+                const refs = mediaRefsByMid[String(m.id)] || [];
+                const rootRef = refs.find(r => r.folder_id === null);
+                return { 
+                    ...m, 
+                    node_type: 'file',
+                    actualMediaId: m.id, // The physical file ID
+                    id: rootRef ? rootRef.id : m.id // Folder Item UUID if available, else media ID
+                };
+            });
             
-        console.log(`[GET_MEDIA DEBUG] Root: found ${items.length} items (orphans + explicit root refs).`);
+        console.log(`[GET_MEDIA DEBUG] Root: found ${items.length} items.`);
     } else {
         // INSIDE FOLDER: Fetch via folder_items
         const { data: refs } = await supabase
@@ -904,7 +914,7 @@ app.delete('/media/:id', async (req, res) => {
         const { permanent } = req.query;
         const isPermanent = permanent === 'true';
 
-        console.log(`[DELETE DEBUG] ID: ${id}, Permanent: ${isPermanent}`);
+        console.log("[DELETE INPUT]", id, { permanent: isPermanent });
 
         // 1. IS IT A FOLDER?
         const { data: folder } = await supabase.from('folders').select('*').eq('id', id).maybeSingle();

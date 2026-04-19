@@ -274,7 +274,10 @@ export default function MediaLibraryPage() {
         }
         break;
       case 'delete':
-        if (item) deleteMutation.mutate(item.id);
+        if (item) {
+          console.log("[DELETE PAYLOAD]", item);
+          deleteMutation.mutate(item.id);
+        }
         break;
       case 'delete-permanent':
         if (item && confirm("Are you sure? This will remove the file from ALL folders and playlists permanently.")) {
