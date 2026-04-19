@@ -84,7 +84,7 @@ const ContextMenu = ({ x, y, onClose, onAction, item, hasClipboard }: {
             </button>
             {item.node_type === 'file' && (
               <button onClick={(e) => { e.stopPropagation(); onAction('delete-permanent'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-xs font-bold text-destructive/70 transition-colors uppercase tracking-tight">
-                <Trash2 className="size-3" /> System Wipe
+                <Trash2 className="size-3" /> Delete Everywhere
               </button>
             )}
           </>
@@ -164,10 +164,16 @@ export default function MediaLibraryPage() {
     mutationFn: mediaApi.delete,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
-      toast({ title: "Media deleted" });
+      toast({ title: "Media removed successfully" });
     },
     onError: (err: any) => {
-      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+      console.error(`[DELETE DEBUG] Error:`, err);
+      const errorMsg = err.response?.data?.error || err.message;
+      toast({ 
+        title: "Delete failed", 
+        description: errorMsg, 
+        variant: "destructive" 
+      });
     }
   });
 

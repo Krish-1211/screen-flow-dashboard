@@ -896,63 +896,106 @@ app.post('/media/paste', async (req, res) => {
         res.status(500).json({ error: "Failed to perform paste operation", details: err.message });
     }
 });
+
+// MEDIA DELETION (Reference-Safe)
 app.delete('/media/:id', async (req, res) => {
-    const { id } = req.params;
-    const { permanent } = req.query;
+    try {
+        const { id } = req.params;
+        const { permanent } = req.query;
+        const isPermanent = permanent === 'true';
 
-    // 1. Check if it's a folder
-    const { data: folder } = await supabase.from('folders').select('*').eq('id', id).maybeSingle();
-    if (folder) {
-        // Move children up to parent of deleted folder
-        const newParent = folder.parent_id || null;
-        await supabase.from('folders').update({ parent_id: newParent }).eq('parent_id', id);
-        await supabase.from('folder_items').update({ folder_id: newParent }).eq('folder_id', id);
-        await supabase.from('folders').delete().eq('id', id);
-        io.emit('media-updated');
-        return res.status(204).send();
-    }
+        console.log(`[DELETE DEBUG] ID: ${id}, Permanent: ${isPermanent}`);
 
-    // 2. Try to find as a Link Reference
-    const { data: folderItem } = await supabase.from('folder_items').select('*').eq('id', id).maybeSingle();
-    if (folderItem) {
-        await supabase.from('folder_items').delete().eq('id', id);
-        if (permanent === 'true') await deleteMediaPermanently(folderItem.media_id);
-    } else {
-        // 3. Direct Media ID (Orphan)
-        await deleteMediaPermanently(id);
-    }
+        // 1. IS IT A FOLDER?
+        const { data: folder } = await supabase.from('folders').select('*').eq('id', id).maybeSingle();
+        if (folder) {
+            console.log(`[DELETE DEBUG] Deleting folder ${id}`);
+            const newParent = folder.parent_id || null;
+            // Re-map children
+            await supabase.from('folders').update({ parent_id: newParent }).eq('parent_id', id);
+            await supabase.from('folder_items').update({ folder_id: newParent }).eq('folder_id', id);
+            // Delete folder
+            await supabase.from('folders').delete().eq('id', id);
+            io.emit('media-updated');
+            return res.status(204).send();
+        }
 
-    async function deleteMediaPermanently(mediaId) {
-        // First delete all remaining references
-        await supabase.from('folder_items').delete().eq('media_id', mediaId);
-        
-        const { data: media } = await supabase.from('media').select('*').eq('id', mediaId).maybeSingle();
-        if (media && media.node_type === 'file') {
-            // Delete from Storage if it's an uploaded file
-            if (media.url && !media.url.includes('youtube.com')) {
-                const storagePath = media.url.split('/').pop();
-                if (storagePath) {
-                    await supabase.storage.from('media').remove([storagePath]);
+        // 2. IS IT A FOLDER ITEM REFERENCE (UUID)?
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        if (isUUID) {
+            const { data: ref } = await supabase.from('folder_items').select('*').eq('id', id).maybeSingle();
+            if (ref) {
+                console.log(`[DELETE DEBUG] Removing reference ${id} (Media: ${ref.media_id})`);
+                await supabase.from('folder_items').delete().eq('id', id);
+                
+                if (isPermanent) {
+                    await deleteMediaPermanently(ref.media_id);
                 }
+                
+                io.emit('media-updated');
+                return res.status(204).send();
             }
-            await supabase.from('media').delete().eq('id', mediaId);
-            
-            // Cleanup Playlists
-            const { data: playlists } = await supabase.from('playlists').select('id, items').eq('client_id', CLIENT_ID);
-            if (playlists) {
-                for (const pl of playlists) {
-                    const cleanedItems = (pl.items || []).filter(item => String(item.mediaId) !== String(mediaId));
-                    if (cleanedItems.length !== (pl.items || []).length) {
-                        await supabase.from('playlists').update({ items: cleanedItems }).eq('id', pl.id);
-                    }
+        }
+
+        // 3. IS IT A DIRECT MEDIA RECORD (Orphan or Root ID)?
+        const { data: media } = await supabase.from('media').select('*').eq('id', id).maybeSingle();
+        if (media) {
+            // Check for references before deleting the physical media record
+            const { data: existingRefs } = await supabase.from('folder_items').select('id').eq('media_id', id);
+            const hasRefs = existingRefs && existingRefs.length > 0;
+
+            if (hasRefs && !isPermanent) {
+                console.log(`[DELETE DEBUG] Refusing to delete media ${id} because it has ${existingRefs.length} references.`);
+                return res.status(400).json({ 
+                    error: "Media is used in folders. Please remove folder references first or use 'System Wipe' to delete everywhere.",
+                    references: existingRefs.length
+                });
+            }
+
+            console.log(`[DELETE DEBUG] ${isPermanent ? 'PERMANENT' : 'ORPHAN'} delete for media ${id}`);
+            await deleteMediaPermanently(id);
+            io.emit('media-updated');
+            return res.status(204).send();
+        }
+
+        return res.status(404).json({ error: "Item not found" });
+
+    } catch (err) {
+        console.error("[DELETE DEBUG] CRASH:", err);
+        res.status(500).json({ error: "Deletion failed", details: err.message });
+    }
+});
+
+async function deleteMediaPermanently(mediaId) {
+    console.log(`[DELETE DEBUG] DEEP NUKE for Media: ${mediaId}`);
+    // a. Clear ALL references
+    await supabase.from('folder_items').delete().eq('media_id', mediaId);
+    
+    // b. Fetch metadata for cleanup
+    const { data: mediaRec } = await supabase.from('media').select('*').eq('id', mediaId).maybeSingle();
+    if (mediaRec && mediaRec.node_type === 'file') {
+        // c. Storage Cleanup
+        if (mediaRec.url && !mediaRec.url.includes('youtube.com')) {
+            const storagePath = mediaRec.url.split('/').pop();
+            if (storagePath) await supabase.storage.from('media').remove([storagePath]);
+        }
+        
+        // d. Playlist Cleanup
+        const { data: playlists } = await supabase.from('playlists').select('id, items').eq('client_id', CLIENT_ID);
+        if (playlists) {
+            for (const pl of playlists) {
+                const items = pl.items || [];
+                const cleaned = items.filter(i => String(i.mediaId) !== String(mediaId));
+                if (cleaned.length !== items.length) {
+                    await supabase.from('playlists').update({ items: cleaned }).eq('id', pl.id);
                 }
             }
         }
-    }
 
-    io.emit('media-updated');
-    res.status(204).send();
-});
+        // e. Final Media Record Deletion
+        await supabase.from('media').delete().eq('id', mediaId);
+    }
+}
 
 // PLAYLISTS
 app.get('/playlists', async (req, res) => {
