@@ -784,14 +784,17 @@ app.put('/media/:id', async (req, res) => {
 app.post('/media/paste', async (req, res) => {
     try {
         const { mediaId, targetFolderId, type } = req.body;
-        const folderId = (targetFolderId === 'root' || targetFolderId === null) ? null : targetFolderId;
+        
+        // Step 1: Sanitize and Normalize Inputs
+        const folderId = (targetFolderId === 'root' || targetFolderId === 'null' || !targetFolderId) ? null : targetFolderId;
+        const opType = type === 'cut' ? 'cut' : 'copy';
 
-        console.log(`[PASTE DEBUG] Start: type=${type}, mediaId=${mediaId}, targetFolderId=${folderId}`);
+        console.log("[PASTE INPUT]", { mediaId, targetFolderId, normalizedFolderId: folderId, opType });
 
         if (!mediaId) return res.status(400).json({ error: "Missing mediaId" });
 
-        // Resolve 'Physical' Media ID
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mediaId);
+        // Step 2: Resolve Physical Media ID (handling UUID links)
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(mediaId));
         let actualMediaId = mediaId;
         if (isUUID) {
             const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', mediaId).maybeSingle();
@@ -801,72 +804,82 @@ app.post('/media/paste', async (req, res) => {
             }
         }
 
-        // VERIFY MEDIA EXISTS
+        // Step 3: Verify Media Existence
         const { data: mediaExists } = await supabase.from('media').select('id').eq('id', actualMediaId).maybeSingle();
         if (!mediaExists) {
-            console.error(`[PASTE DEBUG] Media ${actualMediaId} not found`);
             return res.status(404).json({ error: "Media item not found" });
         }
 
-        // VERIFY FOLDER EXISTS (if not root)
-        if (folderId) {
-            const { data: folderExists } = await supabase.from('folders').select('id').eq('id', folderId).maybeSingle();
-            if (!folderExists) {
-              console.error(`[PASTE DEBUG] Target folder ${folderId} NOT FOUND`);
-              return res.status(404).json({ error: "Destination folder not found" });
-            }
-        }
-
-        // Prevent duplicate placement in the SAME folder
-        // Prevent duplicate placement in the EXACT same target folder
-        let checkQuery = supabase.from('folder_items')
-            .select('*')
-            .eq('media_id', actualMediaId);
-        
-        if (folderId) {
-            checkQuery = checkQuery.eq('folder_id', folderId);
+        // Step 4: Duplicate Check (Split Logic)
+        let exists = false;
+        if (folderId !== null) {
+            // Case 1: Folder paste
+            const { data: existingFolderItem } = await supabase.from('folder_items')
+                .select('*')
+                .eq('media_id', actualMediaId)
+                .eq('folder_id', folderId)
+                .maybeSingle();
+            if (existingFolderItem) exists = true;
         } else {
-            checkQuery = checkQuery.is('folder_id', null);
+            // Case 2: ROOT paste
+            const { data: existingRootItem } = await supabase.from('folder_items')
+                .select('*')
+                .eq('media_id', actualMediaId)
+                .is('folder_id', null)
+                .maybeSingle();
+            if (existingRootItem) exists = true;
         }
 
-        const { data: existing } = await checkQuery.maybeSingle();
-
-        if (existing) {
-            console.log(`[PASTE DEBUG] Duplicate detected in target folder: ${folderId || 'root'}`);
-            if (type === 'cut') return res.json({ message: "Already there", success: true });
+        if (exists) {
+            console.log(`[PASTE DEBUG] Duplicate detected in ${folderId || 'root'}`);
+            if (opType === 'cut') return res.json({ message: "Already there", success: true });
             return res.status(409).json({ error: `Item already exists in ${folderId ? 'this folder' : 'root'}` });
         }
 
-        if (type === 'copy') {
-            console.log(`[COPY DEBUG] Copying ${actualMediaId} to ${folderId || 'root'}`);
-            const { error } = await supabase.from('folder_items').insert({
-                id: crypto.randomUUID(),
-                client_id: CLIENT_ID,
-                media_id: String(actualMediaId),
-                folder_id: folderId // can be null
-            });
-            if (error) throw error;
-        } else if (type === 'cut') {
-            console.log(`[PASTE DEBUG] Cutting ${actualMediaId} to ${folderId || 'root'}`);
-            // Always delete ALL existing folder references for cut (move)
-            const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
-            if (delError) console.warn("[PASTE DEBUG] Cut cleanup warn:", delError);
-            
-            const { error: insError } = await supabase.from('folder_items').insert({
-                id: crypto.randomUUID(),
-                client_id: CLIENT_ID,
-                media_id: String(actualMediaId),
-                folder_id: folderId // can be null
-            });
-            if (insError) throw insError;
+        // Step 5: Execute Operation
+        try {
+            if (opType === 'copy') {
+                console.log(`[PASTE DEBUG] Copying ${actualMediaId} to ${folderId || 'root'}`);
+                const { error } = await supabase.from('folder_items').insert({
+                    id: crypto.randomUUID(),
+                    client_id: CLIENT_ID,
+                    media_id: String(actualMediaId),
+                    folder_id: folderId // can be null
+                });
+                if (error) throw error;
+            } else {
+                console.log(`[PASTE DEBUG] Moving ${actualMediaId} to ${folderId || 'root'}`);
+                // Move: remove all existing folder references first
+                const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+                if (delError) console.warn("[PASTE DEBUG] Cut cleanup warn:", delError);
+                
+                const { error: insError } = await supabase.from('folder_items').insert({
+                    id: crypto.randomUUID(),
+                    client_id: CLIENT_ID,
+                    media_id: String(actualMediaId),
+                    folder_id: folderId // can be null
+                });
+                if (insError) throw insError;
+            }
+
+            console.log(`[PASTE DEBUG] SUCCESS: ${opType} to ${folderId || 'root'} completed.`);
+            io.emit('media-updated');
+            return res.json({ success: true, type: opType, mediaId: actualMediaId, folderId });
+
+        } catch (dbError: any) {
+            console.error(`[PASTE DEBUG] Database Operation failed:`, dbError);
+            if (dbError.code === '23502') { // NOT NULL violation
+                return res.status(400).json({ 
+                    error: "Root directory is currently locked by database constraints.", 
+                    details: "The database folder_items table schema requires folder_id to be NOT NULL. To fix, change the column to allow NULL values."
+                });
+            }
+            throw dbError;
         }
-        
-        console.log(`[PASTE DEBUG] SUCCESS: ${type} completed.`);
-        io.emit('media-updated');
-        return res.json({ success: true, type, mediaId: actualMediaId, folderId });
-    } catch (err) {
+
+    } catch (err: any) {
         console.error("[PASTE DEBUG] CRASH:", err);
-        res.status(500).json({ error: "Server error during paste", details: err.message });
+        res.status(500).json({ error: "Failed to perform paste operation", details: err.message });
     }
 });
 app.delete('/media/:id', async (req, res) => {
