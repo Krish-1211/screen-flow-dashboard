@@ -145,7 +145,8 @@ export default function MediaLibraryPage() {
     },
     onError: (err: any) => {
       console.error(`[MOVE DEBUG] Move FAILED:`, err);
-      toast({ title: "Move failed", description: err.message, variant: "destructive" });
+      const msg = err.response?.data?.error || err.message;
+      toast({ title: "Move failed", description: msg, variant: "destructive" });
     }
   });
 
@@ -207,8 +208,18 @@ export default function MediaLibraryPage() {
       }
     },
     onError: (err: any) => {
-       console.error(`[PASTE DEBUG] Mutation Error:`, err);
-       toast({ title: "Paste failed", description: err.message, variant: "destructive" });
+       console.error(`[PASTE DEBUG] Error Details:`, {
+         status: err.response?.status,
+         data: err.response?.data,
+         msg: err.message
+       });
+       
+       if (err.response?.status === 409) {
+         toast({ title: "Already exists", description: "This item is already in this folder.", variant: "warning" });
+       } else {
+         const errorMsg = err.response?.data?.error || err.message;
+         toast({ title: "Paste failed", description: errorMsg, variant: "destructive" });
+       }
     }
   });
 
@@ -289,9 +300,21 @@ export default function MediaLibraryPage() {
                 <div key={b.id || 'root'} className="flex items-center gap-1.5">
                   {i > 0 && <ChevronRight className="h-3 w-3 opacity-50" />}
                   <button 
-                    onClick={() => navigateToFolder(b.id, b.name)}
+                    onClick={() => {
+                        console.log(`[NAV DEBUG] Breadcrumb clicked: ${b.name}`);
+                        navigateToFolder(b.id, b.name);
+                    }}
+                    onMouseDown={(e) => {
+                        // Prevent click firing if we are about to drag/drop
+                        // Though this is usually for drag start, adding for safety
+                    }}
+                    onDragStart={(e) => {
+                        // This button itself shouldn't be draggable usually
+                        e.preventDefault();
+                    }}
                     onDragOver={(e) => {
                       e.preventDefault();
+                      e.stopPropagation();
                       e.currentTarget.classList.add('text-primary', 'font-bold', 'scale-110');
                     }}
                     onDragLeave={(e) => {
@@ -300,6 +323,7 @@ export default function MediaLibraryPage() {
                     onDrop={(e) => {
                       e.preventDefault();
                       e.stopPropagation(); // CRITICAL: Stop navigation firing
+                      console.log(`[DROP DEBUG] Breadcrumb drop on: ${b.name} (ID: ${b.id})`);
                       e.currentTarget.classList.remove('text-primary', 'font-bold', 'scale-110');
                       try {
                         const rawData = e.dataTransfer.getData("text/plain");
@@ -307,9 +331,7 @@ export default function MediaLibraryPage() {
                         
                         const targetId = b.id; // Breadcrumb folder ID
                         
-                        // Prevent drop on self
                         if (data.targetMediaId) {
-                           console.log(`[DROP DEBUG] Breadcrumb Target: ${targetId || 'root'} for Media: ${data.targetMediaId}`);
                            moveMutation.mutate({ id: data.targetMediaId, parentId: targetId });
                         }
                       } catch (err) {
