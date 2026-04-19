@@ -503,19 +503,30 @@ app.get('/media', async (req, res) => {
     // 2. Fetch Items for current level
     let items = [];
     if (folderId === null) {
-        // ROOT: Find media NOT in any folder_items (Orphans)
-        // Memory-side filtering is more reliable than complex NOT IN queries with Supabase
+        // Find media that are:
+        // 1. Orphans (no entries in folder_items at all)
+        // 2. OR have an explicit 'null' folder_id entry in folder_items
         const [{ data: allMedia }, { data: allRefs }] = await Promise.all([
             supabase.from('media').select('*').eq('client_id', CLIENT_ID),
-            supabase.from('folder_items').select('media_id').eq('client_id', CLIENT_ID)
+            supabase.from('folder_items').select('media_id, folder_id').eq('client_id', CLIENT_ID)
         ]);
         
-        const referencedIds = new Set((allRefs || []).map(r => String(r.media_id)));
+        const mediaRefs = (allRefs || []).reduce((acc, curr) => {
+            const mid = String(curr.media_id);
+            if (!acc[mid]) acc[mid] = [];
+            acc[mid].push(curr.folder_id);
+            return acc;
+        }, {});
+
         items = (allMedia || [])
-            .filter(m => !referencedIds.has(String(m.id)))
+            .filter(m => {
+                const itemFolders = mediaRefs[String(m.id)];
+                // It's in root if it has no folders OR explicitly has a null folder
+                return !itemFolders || itemFolders.includes(null);
+            })
             .map(m => ({ ...m, node_type: 'file' }));
             
-        console.log(`[GET_MEDIA DEBUG] Root: found ${items.length} orphans out of ${allMedia?.length || 0} total media.`);
+        console.log(`[GET_MEDIA DEBUG] Root: found ${items.length} items (orphans + explicit root refs).`);
     } else {
         // INSIDE FOLDER: Fetch via folder_items
         const { data: refs } = await supabase
@@ -807,62 +818,47 @@ app.post('/media/paste', async (req, res) => {
         }
 
         // Prevent duplicate placement in the SAME folder
+        // Prevent duplicate placement in the EXACT same target folder
+        let checkQuery = supabase.from('folder_items')
+            .select('*')
+            .eq('media_id', actualMediaId);
+        
         if (folderId) {
-            const { data: existing } = await supabase.from('folder_items').select('*')
-                .eq('media_id', actualMediaId)
-                .eq('folder_id', folderId)
-                .maybeSingle();
-
-            if (existing) {
-                console.log(`[PASTE DEBUG] Duplicate detected in folder ${folderId}`);
-                if (type === 'cut') return res.json({ message: "Already there", success: true });
-                return res.status(409).json({ error: "Item already exists in this folder" });
-            }
+            checkQuery = checkQuery.eq('folder_id', folderId);
         } else {
-            // Root duplicate check: if it's orphan, it's in root. 
-            // If it has ANY folder_items, it's NOT in root.
-            const { data: refs } = await supabase.from('folder_items').select('id').eq('media_id', actualMediaId).maybeSingle();
-            if (!refs) {
-                console.log(`[PASTE DEBUG] Item already in root`);
-                if (type === 'cut') return res.json({ message: "Already there", success: true });
-                return res.status(409).json({ error: "Item already exists in root" });
-            }
+            checkQuery = checkQuery.is('folder_id', null);
+        }
+
+        const { data: existing } = await checkQuery.maybeSingle();
+
+        if (existing) {
+            console.log(`[PASTE DEBUG] Duplicate detected in target folder: ${folderId || 'root'}`);
+            if (type === 'cut') return res.json({ message: "Already there", success: true });
+            return res.status(409).json({ error: `Item already exists in ${folderId ? 'this folder' : 'root'}` });
         }
 
         if (type === 'copy') {
-            console.log(`[COPY DEBUG] Copying ${actualMediaId} to ${folderId}`);
-            if (folderId) {
-                const { error } = await supabase.from('folder_items').insert({
-                    id: crypto.randomUUID(),
-                    client_id: CLIENT_ID,
-                    media_id: String(actualMediaId),
-                    folder_id: String(folderId)
-                });
-                if (error) throw error;
-            } else {
-                // Copy to root? In this architecture, that means deleting all other references
-                // but user said "Insert new reference ONLY (do NOT delete existing)".
-                // This is a contradiction if root = no references.
-                // For now, let's assume copy to root is not supported or it creates a new media record.
-                // But instructions say "Insert new reference ONLY".
-                // I'll stick to: if folderId is null, we can't "insert a reference" to root.
-                return res.status(400).json({ error: "Cannot copy to root in reference model (must be a folder)" });
-            }
+            console.log(`[COPY DEBUG] Copying ${actualMediaId} to ${folderId || 'root'}`);
+            const { error } = await supabase.from('folder_items').insert({
+                id: crypto.randomUUID(),
+                client_id: CLIENT_ID,
+                media_id: String(actualMediaId),
+                folder_id: folderId // can be null
+            });
+            if (error) throw error;
         } else if (type === 'cut') {
-            console.log(`[PASTE DEBUG] Cutting ${actualMediaId} to ${folderId}`);
-            // Always delete existing folder references for cut (move)
+            console.log(`[PASTE DEBUG] Cutting ${actualMediaId} to ${folderId || 'root'}`);
+            // Always delete ALL existing folder references for cut (move)
             const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
             if (delError) console.warn("[PASTE DEBUG] Cut cleanup warn:", delError);
             
-            if (folderId) {
-                const { error: insError } = await supabase.from('folder_items').insert({
-                    id: crypto.randomUUID(),
-                    client_id: CLIENT_ID,
-                    media_id: String(actualMediaId),
-                    folder_id: String(folderId)
-                });
-                if (insError) throw insError;
-            }
+            const { error: insError } = await supabase.from('folder_items').insert({
+                id: crypto.randomUUID(),
+                client_id: CLIENT_ID,
+                media_id: String(actualMediaId),
+                folder_id: folderId // can be null
+            });
+            if (insError) throw insError;
         }
         
         console.log(`[PASTE DEBUG] SUCCESS: ${type} completed.`);
