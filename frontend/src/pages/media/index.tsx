@@ -104,6 +104,7 @@ export default function MediaLibraryPage() {
   const [uploadName, setUploadName] = useState("");
   const [editingMedia, setEditingMedia] = useState<any>(null);
   const [newName, setNewName] = useState("");
+  const dropLockRef = useRef(false);
 
   const { data: media = [], isLoading, refetch: refetchMedia } = useQuery({
     queryKey: ['media', currentFolderId],
@@ -301,16 +302,12 @@ export default function MediaLibraryPage() {
                   {i > 0 && <ChevronRight className="h-3 w-3 opacity-50" />}
                   <button 
                     onClick={() => {
+                        if (dropLockRef.current) {
+                            console.log(`[NAV DEBUG] Navigation blocked by drop lock`);
+                            return;
+                        }
                         console.log(`[NAV DEBUG] Breadcrumb clicked: ${b.name}`);
                         navigateToFolder(b.id, b.name);
-                    }}
-                    onMouseDown={(e) => {
-                        // Prevent click firing if we are about to drag/drop
-                        // Though this is usually for drag start, adding for safety
-                    }}
-                    onDragStart={(e) => {
-                        // This button itself shouldn't be draggable usually
-                        e.preventDefault();
                     }}
                     onDragOver={(e) => {
                       e.preventDefault();
@@ -322,7 +319,12 @@ export default function MediaLibraryPage() {
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
-                      e.stopPropagation(); // CRITICAL: Stop navigation firing
+                      e.stopPropagation(); // Stop propagation
+                      
+                      // Activate lock to prevent immediate onClick firing
+                      dropLockRef.current = true;
+                      setTimeout(() => { dropLockRef.current = false; }, 300);
+
                       console.log(`[DROP DEBUG] Breadcrumb drop on: ${b.name} (ID: ${b.id})`);
                       e.currentTarget.classList.remove('text-primary', 'font-bold', 'scale-110');
                       try {
