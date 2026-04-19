@@ -215,7 +215,7 @@ export default function MediaLibraryPage() {
        });
        
        if (err.response?.status === 409) {
-         toast({ title: "Already exists", description: "This item is already in this folder.", variant: "warning" });
+         toast({ title: "Already exists", description: "This item is already in this folder.", variant: "default" });
        } else {
          const errorMsg = err.response?.data?.error || err.message;
          toast({ title: "Paste failed", description: errorMsg, variant: "destructive" });
