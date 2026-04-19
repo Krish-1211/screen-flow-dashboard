@@ -49,8 +49,8 @@ export const mediaApi = {
     },
     paste: async (mediaId: string | number, targetFolderId: string | null, type: 'copy' | 'cut'): Promise<any> => {
         const response = await api.post('/media/paste', { 
-            mediaId, 
-            targetFolderId: targetFolderId === null ? 'root' : targetFolderId, 
+            mediaId: String(mediaId), 
+            targetFolderId: targetFolderId === null ? 'root' : String(targetFolderId), 
             type 
         });
         return response.data;

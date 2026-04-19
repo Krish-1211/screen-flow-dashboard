@@ -53,30 +53,30 @@ const ContextMenu = ({ x, y, onClose, onAction, item, hasClipboard }: {
     >
       {item && (
         <>
-          <button onClick={() => onAction('copy')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
+          <button onClick={(e) => { e.stopPropagation(); onAction('copy'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
             <Copy className="size-4 opacity-70" /> Copy
           </button>
-          <button onClick={() => onAction('cut')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
+          <button onClick={(e) => { e.stopPropagation(); onAction('cut'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
             <Scissors className="size-4 opacity-70" /> Cut
           </button>
         </>
       )}
       {hasClipboard && (
-        <button onClick={() => onAction('paste')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
+        <button onClick={(e) => { e.stopPropagation(); onAction('paste'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
           <ClipboardPaste className="size-4 opacity-70" /> Paste
         </button>
       )}
       {item && (
         <>
           <div className="h-px bg-border my-1" />
-          <button onClick={() => onAction('rename')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-primary transition-colors">
+          <button onClick={(e) => { e.stopPropagation(); onAction('rename'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-primary transition-colors">
             <Edit2 className="size-4" /> Rename
           </button>
-          <button onClick={() => onAction('delete')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-destructive transition-colors">
+          <button onClick={(e) => { e.stopPropagation(); onAction('delete'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-destructive transition-colors">
             <Trash2 className="size-4" /> Delete
           </button>
           {item.node_type === 'file' && (
-            <button onClick={() => onAction('delete-permanent')} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-xs font-bold text-destructive/70 transition-colors uppercase tracking-tight">
+            <button onClick={(e) => { e.stopPropagation(); onAction('delete-permanent'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-xs font-bold text-destructive/70 transition-colors uppercase tracking-tight">
               <Trash2 className="size-3" /> System Wipe
             </button>
           )}
@@ -105,6 +105,7 @@ export default function MediaLibraryPage() {
   const [editingMedia, setEditingMedia] = useState<any>(null);
   const [newName, setNewName] = useState("");
   const dropLockRef = useRef(false);
+  const actionLockRef = useRef(0);
 
   const { data: media = [], isLoading, refetch: refetchMedia } = useQuery({
     queryKey: ['media', currentFolderId],
@@ -195,8 +196,10 @@ export default function MediaLibraryPage() {
   });
 
   const pasteMutation = useMutation({
-    mutationFn: ({ mediaId, targetFolderId, type }: { mediaId: string; targetFolderId: string | null; type: 'copy' | 'cut' }) => 
-      mediaApi.paste(mediaId, targetFolderId, type),
+    mutationFn: ({ mediaId, targetFolderId, type }: { mediaId: string; targetFolderId: string | null; type: 'copy' | 'cut' }) => {
+      console.log("[PASTE PAYLOAD]", { mediaId, targetFolderId: targetFolderId ?? null, type });
+      return mediaApi.paste(mediaId, targetFolderId ?? null, type);
+    },
     onSuccess: async (res) => {
       console.log(`[PASTE DEBUG] API Success:`, res);
       if (res.success) {
@@ -230,8 +233,9 @@ export default function MediaLibraryPage() {
   };
 
   const handleAction = (action: string) => {
-    if (!contextMenu) return;
-    const { item } = contextMenu;
+    actionLockRef.current = Date.now(); // Set lock to prevent click-through
+    if (!contextMenu && action !== 'paste') return;
+    const item = contextMenu?.item || null;
 
     switch (action) {
       case 'copy':
@@ -243,8 +247,8 @@ export default function MediaLibraryPage() {
       case 'paste':
         if (clipboard) {
           pasteMutation.mutate({ 
-            mediaId: (clipboard.item as any).actualMediaId || clipboard.item.id, 
-            targetFolderId: currentFolderId, 
+            mediaId: String((clipboard.item as any).actualMediaId || clipboard.item.id), 
+            targetFolderId: currentFolderId ?? null, 
             type: clipboard.type 
           });
         }
@@ -261,8 +265,6 @@ export default function MediaLibraryPage() {
       case 'delete-permanent':
         if (item && confirm("Are you sure? This will remove the file from ALL folders and playlists permanently.")) {
            const id = (item as any).actualMediaId || item.id;
-           // We'll need a way to pass permanent=true to the delete mutation
-           // I'll adjust the mediaApi service next
            deleteMutation.mutate(`${id}?permanent=true`);
         }
         break;
@@ -304,6 +306,11 @@ export default function MediaLibraryPage() {
                     onClick={() => {
                         if (dropLockRef.current) {
                             console.log(`[NAV DEBUG] Navigation blocked by drop lock`);
+                            return;
+                        }
+                        // Also block if a context menu action just happened (prevent click-through)
+                        if (Date.now() - actionLockRef.current < 300) {
+                            console.log(`[NAV DEBUG] Navigation blocked by action lock (prevent click-through)`);
                             return;
                         }
                         console.log(`[NAV DEBUG] Breadcrumb clicked: ${b.name}`);
