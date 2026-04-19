@@ -46,43 +46,51 @@ const ContextMenu = ({ x, y, onClose, onAction, item, hasClipboard }: {
   }, [onClose]);
 
   return (
-    <div 
-      className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1.5 min-w-[180px] animate-in fade-in zoom-in duration-100"
-      style={{ top: y, left: x }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {item && (
-        <>
-          <button onClick={(e) => { e.stopPropagation(); onAction('copy'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
-            <Copy className="size-4 opacity-70" /> Copy
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); onAction('cut'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
-            <Scissors className="size-4 opacity-70" /> Cut
-          </button>
-        </>
-      )}
-      {hasClipboard && (
-        <button onClick={(e) => { e.stopPropagation(); onAction('paste'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
-          <ClipboardPaste className="size-4 opacity-70" /> Paste
-        </button>
-      )}
-      {item && (
-        <>
-          <div className="h-px bg-border my-1" />
-          <button onClick={(e) => { e.stopPropagation(); onAction('rename'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-primary transition-colors">
-            <Edit2 className="size-4" /> Rename
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); onAction('delete'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-destructive transition-colors">
-            <Trash2 className="size-4" /> Delete
-          </button>
-          {item.node_type === 'file' && (
-            <button onClick={(e) => { e.stopPropagation(); onAction('delete-permanent'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-xs font-bold text-destructive/70 transition-colors uppercase tracking-tight">
-              <Trash2 className="size-3" /> System Wipe
+    <>
+      <div 
+        className="fixed inset-0 z-40" 
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onClose(); }}
+      />
+      <div 
+        className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1.5 min-w-[180px] animate-in fade-in zoom-in duration-100"
+        style={{ top: y, left: x }}
+        onClick={(e) => e.stopPropagation()}
+        onContextMenu={(e) => e.stopPropagation()}
+      >
+        {item && (
+          <>
+            <button onClick={(e) => { e.stopPropagation(); onAction('copy'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
+              <Copy className="size-4 opacity-70" /> Copy
             </button>
-          )}
-        </>
-      )}
-    </div>
+            <button onClick={(e) => { e.stopPropagation(); onAction('cut'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
+              <Scissors className="size-4 opacity-70" /> Cut
+            </button>
+          </>
+        )}
+        {hasClipboard && (
+          <button onClick={(e) => { e.stopPropagation(); onAction('paste'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium transition-colors">
+            <ClipboardPaste className="size-4 opacity-70" /> Paste
+          </button>
+        )}
+        {item && (
+          <>
+            <div className="h-px bg-border my-1" />
+            <button onClick={(e) => { e.stopPropagation(); onAction('rename'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-primary transition-colors">
+              <Edit2 className="size-4" /> Rename
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); onAction('delete'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-sm font-medium text-destructive transition-colors">
+              <Trash2 className="size-4" /> Delete
+            </button>
+            {item.node_type === 'file' && (
+              <button onClick={(e) => { e.stopPropagation(); onAction('delete-permanent'); }} className="w-full text-left px-3 py-1.5 hover:bg-secondary flex items-center gap-2.5 text-xs font-bold text-destructive/70 transition-colors uppercase tracking-tight">
+                <Trash2 className="size-3" /> System Wipe
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </>
   );
 };
 

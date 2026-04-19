@@ -838,17 +838,31 @@ app.post('/media/paste', async (req, res) => {
 
         // Step 5: Execute Operation
         try {
+            if (folderId === null) {
+                // ROOT CASE (Library):
+                // Since the database has a NOT NULL constraint on folder_id,
+                // we represent 'root' as being an ORPHAN (no references).
+                console.log(`[PASTE DEBUG] Target is ROOT. Clearing references to make it an orphan.`);
+                const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
+                if (delError) throw delError;
+
+                console.log(`[PASTE DEBUG] SUCCESS: ${opType} to root completed (orphan model).`);
+                io.emit('media-updated');
+                return res.json({ success: true, type: opType, mediaId: actualMediaId, folderId: null });
+            }
+
+            // FOLDER CASE:
             if (opType === 'copy') {
-                console.log(`[PASTE DEBUG] Copying ${actualMediaId} to ${folderId || 'root'}`);
+                console.log(`[PASTE DEBUG] Copying ${actualMediaId} to folder ${folderId}`);
                 const { error } = await supabase.from('folder_items').insert({
                     id: crypto.randomUUID(),
                     client_id: CLIENT_ID,
                     media_id: String(actualMediaId),
-                    folder_id: folderId // can be null
+                    folder_id: folderId
                 });
                 if (error) throw error;
             } else {
-                console.log(`[PASTE DEBUG] Moving ${actualMediaId} to ${folderId || 'root'}`);
+                console.log(`[PASTE DEBUG] Moving ${actualMediaId} to folder ${folderId}`);
                 // Move: remove all existing folder references first
                 const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
                 if (delError) console.warn("[PASTE DEBUG] Cut cleanup warn:", delError);
@@ -857,12 +871,12 @@ app.post('/media/paste', async (req, res) => {
                     id: crypto.randomUUID(),
                     client_id: CLIENT_ID,
                     media_id: String(actualMediaId),
-                    folder_id: folderId // can be null
+                    folder_id: folderId
                 });
                 if (insError) throw insError;
             }
 
-            console.log(`[PASTE DEBUG] SUCCESS: ${opType} to ${folderId || 'root'} completed.`);
+            console.log(`[PASTE DEBUG] SUCCESS: ${opType} to folder ${folderId} completed.`);
             io.emit('media-updated');
             return res.json({ success: true, type: opType, mediaId: actualMediaId, folderId });
 
