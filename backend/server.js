@@ -503,16 +503,19 @@ app.get('/media', async (req, res) => {
     // 2. Fetch Items for current level
     let items = [];
     if (folderId === null) {
-        // ROOT: Find media NOT in any folder_items
-        const { data: allRefs } = await supabase.from('folder_items').select('media_id').eq('client_id', CLIENT_ID);
-        const refIds = (allRefs || []).map(r => String(r.media_id));
+        // ROOT: Find media NOT in any folder_items (Orphans)
+        // Memory-side filtering is more reliable than complex NOT IN queries with Supabase
+        const [{ data: allMedia }, { data: allRefs }] = await Promise.all([
+            supabase.from('media').select('*').eq('client_id', CLIENT_ID),
+            supabase.from('folder_items').select('media_id').eq('client_id', CLIENT_ID)
+        ]);
         
-        let orphanQuery = supabase.from('media').select('*').eq('client_id', CLIENT_ID);
-        if (refIds.length > 0) {
-            orphanQuery = orphanQuery.not('id', 'in', `(${refIds.join(',')})`);
-        }
-        const { data: orphanData } = await orphanQuery;
-        items = (orphanData || []).map(m => ({ ...m, node_type: 'file' }));
+        const referencedIds = new Set((allRefs || []).map(r => String(r.media_id)));
+        items = (allMedia || [])
+            .filter(m => !referencedIds.has(String(m.id)))
+            .map(m => ({ ...m, node_type: 'file' }));
+            
+        console.log(`[GET_MEDIA DEBUG] Root: found ${items.length} orphans out of ${allMedia?.length || 0} total media.`);
     } else {
         // INSIDE FOLDER: Fetch via folder_items
         const { data: refs } = await supabase
@@ -528,6 +531,8 @@ app.get('/media', async (req, res) => {
             parent_id: ref.folder_id,
             node_type: 'file'
         })).filter(i => i.name);
+
+        console.log(`[GET_MEDIA DEBUG] Folder ${folderId}: found ${items.length} items.`);
     }
 
     // Calculate folder counts (how many files in each folder)

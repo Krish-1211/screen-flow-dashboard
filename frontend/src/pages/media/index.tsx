@@ -105,7 +105,7 @@ export default function MediaLibraryPage() {
   const [editingMedia, setEditingMedia] = useState<any>(null);
   const [newName, setNewName] = useState("");
 
-  const { data: media = [], isLoading } = useQuery({
+  const { data: media = [], isLoading, refetch: refetchMedia } = useQuery({
     queryKey: ['media', currentFolderId],
     queryFn: () => mediaApi.getAll(currentFolderId)
   });
@@ -137,9 +137,15 @@ export default function MediaLibraryPage() {
       console.log(`[MOVE DEBUG] Mutating Item: ${id} → Target: ${parentId}`);
       return mediaApi.update(id, { parent_id: parentId });
     },
-    onSuccess: () => {
+    onSuccess: async (data) => {
+      console.log(`[MOVE DEBUG] Move SUCCESS:`, data);
+      await refetchMedia();
       queryClient.invalidateQueries({ queryKey: ['media'] });
       toast({ title: "Item moved" });
+    },
+    onError: (err: any) => {
+      console.error(`[MOVE DEBUG] Move FAILED:`, err);
+      toast({ title: "Move failed", description: err.message, variant: "destructive" });
     }
   });
 
@@ -189,10 +195,20 @@ export default function MediaLibraryPage() {
   const pasteMutation = useMutation({
     mutationFn: ({ mediaId, targetFolderId, type }: { mediaId: string; targetFolderId: string | null; type: 'copy' | 'cut' }) => 
       mediaApi.paste(mediaId, targetFolderId, type),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['media'] });
-      setClipboard(null);
-      toast({ title: "Pasted successfully" });
+    onSuccess: async (res) => {
+      console.log(`[PASTE DEBUG] API Success:`, res);
+      if (res.success) {
+        await refetchMedia();
+        queryClient.invalidateQueries({ queryKey: ['media'] });
+        setClipboard(null);
+        toast({ title: res.type === 'copy' ? "Copied successfully" : "Moved successfully" });
+      } else {
+        toast({ title: "Paste failed", description: res.error || "Unknown error", variant: "destructive" });
+      }
+    },
+    onError: (err: any) => {
+       console.error(`[PASTE DEBUG] Mutation Error:`, err);
+       toast({ title: "Paste failed", description: err.message, variant: "destructive" });
     }
   });
 
@@ -283,13 +299,17 @@ export default function MediaLibraryPage() {
                     }}
                     onDrop={(e) => {
                       e.preventDefault();
-                      e.stopPropagation();
+                      e.stopPropagation(); // CRITICAL: Stop navigation firing
                       e.currentTarget.classList.remove('text-primary', 'font-bold', 'scale-110');
                       try {
-                        const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+                        const rawData = e.dataTransfer.getData("text/plain");
+                        const data = JSON.parse(rawData);
+                        
                         const targetId = b.id; // Breadcrumb folder ID
-                        if (data.targetMediaId && data.targetMediaId !== String(targetId)) {
-                           console.log(`[DROP DEBUG] Breadcrumb Target: ${targetId}`);
+                        
+                        // Prevent drop on self
+                        if (data.targetMediaId) {
+                           console.log(`[DROP DEBUG] Breadcrumb Target: ${targetId || 'root'} for Media: ${data.targetMediaId}`);
                            moveMutation.mutate({ id: data.targetMediaId, parentId: targetId });
                         }
                       } catch (err) {
