@@ -631,8 +631,10 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
 
     // CREATE FOLDER REFERENCE (Mandatory for placement)
     const rawTarget = req.body.parent_id;
-    const folderId = rawTarget === 'root' ? null : (rawTarget || null);
+    const folderId = (rawTarget === 'root' || !rawTarget) ? null : rawTarget;
     
+    console.log(`[UPLOAD DEBUG] File: ${mediaRecord.name}, Target Folder: ${folderId}`);
+
     if (folderId) {
         // Verify folder exists in new folders table
         const { data: folderExists } = await supabase.from('folders').select('id').eq('id', folderId).maybeSingle();
@@ -642,8 +644,9 @@ app.post('/media/upload', upload.single('file'), async (req, res) => {
                 media_id: mediaRecord.id,
                 folder_id: folderId
             });
+            console.log(`[UPLOAD DEBUG] Reference created in folder: ${folderId}`);
         } else {
-            logger.warn({ folderId, mediaId: mediaRecord.id }, 'Upload Target Folder not found in dedicated folders table. Item will remain at root.');
+            console.warn(`[UPLOAD DEBUG] Target folder ${folderId} not found. Item staying at root.`);
         }
     }
 
@@ -696,6 +699,9 @@ app.put('/media/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { name, parent_id } = req.body;
+        const folderId = (parent_id === 'root') ? null : (parent_id ?? undefined);
+
+        console.log(`[MOVE DEBUG] ID: ${id}, Target Folder: ${folderId}, Name: ${name}`);
 
         const isLinkUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
         let actualMediaId = id;
@@ -728,30 +734,12 @@ app.put('/media/:id', async (req, res) => {
                 await supabase.from('folders').update({ parent_id: targetFolderId }).eq('id', actualMediaId);
             } else {
                 // Moving a Media Item (File)
-                // 1. Verify Media Exists
-                const { data: mediaItem } = await supabase.from('media').select('id').eq('id', actualMediaId).maybeSingle();
-                if (!mediaItem) return res.status(404).json({ error: "Media not found", mediaId: actualMediaId });
-
-                // 2. Verify Target Folder Exists
-                if (targetFolderId) {
-                    const { data: targetFolder, error: folderStatusError } = await supabase.from('folders').select('id').eq('id', targetFolderId).maybeSingle();
-                    
-                    if (folderStatusError) {
-                        console.error("[MOVE] DB Error checking target folder:", folderStatusError);
-                        return res.status(500).json({ error: "Database error during folder validation", details: folderStatusError });
-                    }
-
-                    if (!targetFolder) {
-                        console.warn(`[MOVE FAILURE] Target folder ${targetFolderId} not found in 'folders' table.`);
-                        return res.status(400).json({ error: "Move destination does not exist. The folder may have been deleted.", folderId: targetFolderId });
-                    }
-                }
-
-                // 3. Clear old placements and insert new
+                // 1. ALWAYS delete existing folder reference
                 const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
-                if (delError) console.error("[MOVE] Cleanup warn:", delError);
+                if (delError) console.error("[MOVE DEBUG] Delete failed:", delError);
 
-                if (targetFolderId) {
+                // 2. IF folderId !== null → insert new reference
+                if (targetFolderId !== null) {
                     const { error: insError } = await supabase.from('folder_items').insert({
                         client_id: CLIENT_ID,
                         media_id: String(actualMediaId),
@@ -759,14 +747,11 @@ app.put('/media/:id', async (req, res) => {
                     });
 
                     if (insError) {
-                        console.error("[MOVE] Placement FAILED:", insError);
-                        return res.status(500).json({ 
-                          error: "Database failed to place item in folder", 
-                          details: insError.message,
-                          code: insError.code 
-                        });
+                        console.error("[MOVE DEBUG] Insert failed:", insError);
+                        return res.status(500).json({ error: "Move placement failed", details: insError });
                     }
                 }
+                // IF folderId === null → DO NOTHING (already deleted reference, so it's in root)
             }
             io.emit('media-updated');
         }
@@ -774,7 +759,7 @@ app.put('/media/:id', async (req, res) => {
         return res.json({ success: true, isFolder, mediaId: actualMediaId });
 
     } catch (err) {
-        console.error("MOVE ERROR:", err);
+        console.error("[MOVE DEBUG] CRASH:", err);
         res.status(500).json({ error: "Move operation failed", details: err.message });
     }
 });
@@ -785,7 +770,7 @@ app.post('/media/paste', async (req, res) => {
         const { mediaId, targetFolderId, type } = req.body;
         const folderId = (targetFolderId === 'root' || targetFolderId === null) ? null : targetFolderId;
 
-        console.log(`[PASTE] Operation started: type=${type}, media=${mediaId}, folder=${folderId}`);
+        console.log(`[PASTE DEBUG] Start: type=${type}, mediaId=${mediaId}, targetFolderId=${folderId}`);
 
         if (!mediaId) return res.status(400).json({ error: "Missing mediaId" });
 
@@ -796,34 +781,51 @@ app.post('/media/paste', async (req, res) => {
             const { data: ref } = await supabase.from('folder_items').select('media_id').eq('id', mediaId).maybeSingle();
             if (ref) {
               actualMediaId = ref.media_id;
-              console.log(`[PASTE] Resolved UUID ${mediaId} to MediaID ${actualMediaId}`);
+              console.log(`[PASTE DEBUG] Resolved UUID ${mediaId} to MediaID ${actualMediaId}`);
             }
         }
 
-        // VERIFY FOLDER EXISTS
+        // VERIFY MEDIA EXISTS
+        const { data: mediaExists } = await supabase.from('media').select('id').eq('id', actualMediaId).maybeSingle();
+        if (!mediaExists) {
+            console.error(`[PASTE DEBUG] Media ${actualMediaId} not found`);
+            return res.status(404).json({ error: "Media item not found" });
+        }
+
+        // VERIFY FOLDER EXISTS (if not root)
         if (folderId) {
-            const { data: folderExists, error: folderCheckError } = await supabase.from('folders').select('id, name').eq('id', folderId).maybeSingle();
-            if (folderCheckError) {
-              console.error("[PASTE] Error verifying folder existence:", folderCheckError);
-              return res.status(500).json({ error: "Folder verification failed", details: folderCheckError });
-            }
+            const { data: folderExists } = await supabase.from('folders').select('id').eq('id', folderId).maybeSingle();
             if (!folderExists) {
-              console.error(`[PASTE ERROR] Target folder ${folderId} NOT FOUND in 'folders' table.`);
-              return res.status(404).json({ error: `Destination folder ${folderId} does not exist in the database.` });
+              console.error(`[PASTE DEBUG] Target folder ${folderId} NOT FOUND`);
+              return res.status(404).json({ error: "Destination folder not found" });
             }
-            console.log(`[PASTE] Target folder verified: ${folderExists.name}`);
         }
 
-        // Prevent duplicate placement
+        // Prevent duplicate placement in the SAME folder
         if (folderId) {
-            const { data: existing } = await supabase.from('folder_items').select('*').eq('media_id', actualMediaId).eq('folder_id', folderId).maybeSingle();
+            const { data: existing } = await supabase.from('folder_items').select('*')
+                .eq('media_id', actualMediaId)
+                .eq('folder_id', folderId)
+                .maybeSingle();
+
             if (existing) {
-                if (type === 'cut') return res.json({ message: "Already there", ref: existing });
+                console.log(`[PASTE DEBUG] Duplicate detected in folder ${folderId}`);
+                if (type === 'cut') return res.json({ message: "Already there", success: true });
                 return res.status(409).json({ error: "Item already exists in this folder" });
+            }
+        } else {
+            // Root duplicate check: if it's orphan, it's in root. 
+            // If it has ANY folder_items, it's NOT in root.
+            const { data: refs } = await supabase.from('folder_items').select('id').eq('media_id', actualMediaId).maybeSingle();
+            if (!refs) {
+                console.log(`[PASTE DEBUG] Item already in root`);
+                if (type === 'cut') return res.json({ message: "Already there", success: true });
+                return res.status(409).json({ error: "Item already exists in root" });
             }
         }
 
         if (type === 'copy') {
+            console.log(`[COPY DEBUG] Copying ${actualMediaId} to ${folderId}`);
             if (folderId) {
                 const { error } = await supabase.from('folder_items').insert({
                     id: crypto.randomUUID(),
@@ -831,14 +833,21 @@ app.post('/media/paste', async (req, res) => {
                     media_id: String(actualMediaId),
                     folder_id: String(folderId)
                 });
-                if (error) {
-                  console.error("[PASTE] Copy insert failed:", error);
-                  return res.status(500).json({ error: "Copy failed", details: error });
-                }
+                if (error) throw error;
+            } else {
+                // Copy to root? In this architecture, that means deleting all other references
+                // but user said "Insert new reference ONLY (do NOT delete existing)".
+                // This is a contradiction if root = no references.
+                // For now, let's assume copy to root is not supported or it creates a new media record.
+                // But instructions say "Insert new reference ONLY".
+                // I'll stick to: if folderId is null, we can't "insert a reference" to root.
+                return res.status(400).json({ error: "Cannot copy to root in reference model (must be a folder)" });
             }
         } else if (type === 'cut') {
+            console.log(`[PASTE DEBUG] Cutting ${actualMediaId} to ${folderId}`);
+            // Always delete existing folder references for cut (move)
             const { error: delError } = await supabase.from('folder_items').delete().eq('media_id', actualMediaId);
-            if (delError) console.warn("[PASTE] Cleanup warn:", delError);
+            if (delError) console.warn("[PASTE DEBUG] Cut cleanup warn:", delError);
             
             if (folderId) {
                 const { error: insError } = await supabase.from('folder_items').insert({
@@ -847,18 +856,15 @@ app.post('/media/paste', async (req, res) => {
                     media_id: String(actualMediaId),
                     folder_id: String(folderId)
                 });
-                if (insError) {
-                  console.error("[PASTE] Cut insert failed:", insError);
-                  return res.status(500).json({ error: "Move placement failed", details: insError });
-                }
+                if (insError) throw insError;
             }
         }
         
-        console.log(`[PASTE] SUCCESS: Operation ${type} completed.`);
+        console.log(`[PASTE DEBUG] SUCCESS: ${type} completed.`);
         io.emit('media-updated');
         return res.json({ success: true, type, mediaId: actualMediaId, folderId });
     } catch (err) {
-        console.error("[PASTE CRASH]", err);
+        console.error("[PASTE DEBUG] CRASH:", err);
         res.status(500).json({ error: "Server error during paste", details: err.message });
     }
 });

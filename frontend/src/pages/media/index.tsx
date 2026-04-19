@@ -215,7 +215,7 @@ export default function MediaLibraryPage() {
       case 'paste':
         if (clipboard) {
           pasteMutation.mutate({ 
-            mediaId: (clipboard.item as any).mediaId || clipboard.item.id, 
+            mediaId: (clipboard.item as any).actualMediaId || clipboard.item.id, 
             targetFolderId: currentFolderId, 
             type: clipboard.type 
           });
@@ -232,7 +232,7 @@ export default function MediaLibraryPage() {
         break;
       case 'delete-permanent':
         if (item && confirm("Are you sure? This will remove the file from ALL folders and playlists permanently.")) {
-           const id = (item as any).mediaId || item.id;
+           const id = (item as any).actualMediaId || item.id;
            // We'll need a way to pass permanent=true to the delete mutation
            // I'll adjust the mediaApi service next
            deleteMutation.mutate(`${id}?permanent=true`);
