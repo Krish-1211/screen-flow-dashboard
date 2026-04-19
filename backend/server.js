@@ -866,7 +866,7 @@ app.post('/media/paste', async (req, res) => {
             io.emit('media-updated');
             return res.json({ success: true, type: opType, mediaId: actualMediaId, folderId });
 
-        } catch (dbError: any) {
+        } catch (dbError) {
             console.error(`[PASTE DEBUG] Database Operation failed:`, dbError);
             if (dbError.code === '23502') { // NOT NULL violation
                 return res.status(400).json({ 
@@ -877,7 +877,7 @@ app.post('/media/paste', async (req, res) => {
             throw dbError;
         }
 
-    } catch (err: any) {
+    } catch (err) {
         console.error("[PASTE DEBUG] CRASH:", err);
         res.status(500).json({ error: "Failed to perform paste operation", details: err.message });
     }
