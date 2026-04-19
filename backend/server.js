@@ -930,45 +930,21 @@ app.delete('/media/:id', async (req, res) => {
             return res.status(204).send();
         }
 
-        // 2. IS IT A FOLDER ITEM REFERENCE (UUID)?
-        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-        if (isUUID) {
-            const { data: ref } = await supabase.from('folder_items').select('*').eq('id', id).maybeSingle();
-            if (ref) {
-                console.log(`[DELETE DEBUG] Removing reference ${id} (Media: ${ref.media_id})`);
-                await supabase.from('folder_items').delete().eq('id', id);
-                
-                if (isPermanent) {
-                    await deleteMediaPermanently(ref.media_id);
-                }
-                
-                io.emit('media-updated');
-                return res.status(204).send();
-            }
-        }
-
-        // 3. IS IT A DIRECT MEDIA RECORD (Orphan or Root ID)?
-        const { data: media } = await supabase.from('media').select('*').eq('id', id).maybeSingle();
-        if (media) {
-            // Check for references before deleting the physical media record
-            const { data: existingRefs } = await supabase.from('folder_items').select('id').eq('media_id', id);
-            const hasRefs = existingRefs && existingRefs.length > 0;
-
-            if (hasRefs && !isPermanent) {
-                console.log(`[DELETE DEBUG] Refusing to delete media ${id} because it has ${existingRefs.length} references.`);
-                return res.status(400).json({ 
-                    error: "Media is used in folders. Please remove folder references first or use 'System Wipe' to delete everywhere.",
-                    references: existingRefs.length
-                });
-            }
-
-            console.log(`[DELETE DEBUG] ${isPermanent ? 'PERMANENT' : 'ORPHAN'} delete for media ${id}`);
+        if (isPermanent) {
+            console.log(`[DELETE DEBUG] PERMANENT DELETE triggered for ${id}`);
             await deleteMediaPermanently(id);
             io.emit('media-updated');
             return res.status(204).send();
+        } else {
+            console.log(`[DELETE DEBUG] REFERENCE REMOVAL ONLY for ${id}`);
+            // Strictly delete the reference by its primary ID.
+            // If 'id' is a mediaId, this will simply delete nothing (safe).
+            const { error: refError } = await supabase.from('folder_items').delete().eq('id', id);
+            if (refError) console.warn("[DELETE DEBUG] Reference removal note:", refError);
+            
+            io.emit('media-updated');
+            return res.status(204).send();
         }
-
-        return res.status(404).json({ error: "Item not found" });
 
     } catch (err) {
         console.error("[DELETE DEBUG] CRASH:", err);
